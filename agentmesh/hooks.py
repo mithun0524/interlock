@@ -133,6 +133,9 @@ def _conflict_message(conflicts, agents):
         )
         if other.get("goal"):
             out.append(f"      their goal: {other['goal']}")
+        if other.get("progress"):
+            # the output half: intent alone is not enough to adapt to
+            out.append(f"      produced so far: {other['progress']}")
         if c["kind"] == detect.GOD_SYMBOL:
             out.append(
                 "      repo-wide change — ask the human, then: "
