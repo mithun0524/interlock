@@ -131,3 +131,174 @@ def mark_waiting(agent_id, ref, recipient_inv):
                 c["waiting_since_inv"] = recipient_inv
                 c["nudged"] = False
         state.save(data)
+
+
+def is_absent(row, now):
+    return now - row.get("hb", 0) > state.TTL_ABSENT
+
+
+def check_timers(now=None):
+    now = time.time() if now is None else now
+    changed, notes, nudges = [], [], []
+
+    with state.locked():
+        data = state.prune(state.load(), now)
+        agents = data["agents"]
+        for aid, row in agents.items():
+            for c in row.get("conflicts", []):
+                if c.get("status") == "resolved":
+                    continue
+                other_id = c.get("with")
+                other = agents.get(other_id)
+
+                # 1. absent counterparty: never hold the repo hostage
+                if c.get("status") != "escalated" and other_id and (
+                        other is None or is_absent(other, now)):
+                    c["status"] = "resolved"
+                    c["detail"] += " | counterparty absent, proceeded"
+                    row.setdefault("resolved", []).append({
+                        "ref": c["ref"], "with": other_id,
+                        "agreement": "counterparty absent; proceeded "
+                                     "unilaterally",
+                    })
+                    if other is not None:
+                        notes.append((other_id, aid, c["ref"]))
+                    changed.append(c)
+                    continue
+
+                # 2. round cap
+                if c.get("status") != "escalated" \
+                        and c.get("round", 0) > state.ROUND_CAP:
+                    c["status"] = "escalated"
+                    c["escalated_at_inv"] = row.get("inv", 0)
+                    changed.append(c)
+                    continue
+
+                # 3. already escalated: the fallback pass handles it
+                if c.get("status") == "escalated":
+                    continue
+
+                # 4. silence, counted in the recipient's own activity
+                waiting = c.get("waiting_since_inv")
+                if waiting is not None and other is not None:
+                    elapsed = other.get("inv", 0) - waiting
+                    if elapsed >= state.ESCALATE_AFTER_INV:
+                        c["status"] = "escalated"
+                        c["escalated_at_inv"] = row.get("inv", 0)
+                        changed.append(c)
+                    elif elapsed >= state.NUDGE_AFTER_INV \
+                            and not c.get("nudged"):
+                        c["nudged"] = True
+                        nudges.append((other_id, aid, c["ref"]))
+                        changed.append(c)
+        state.save(data)
+
+    changed += _apply_fallback(now)
+
+    for to, frm, ref in notes:
+        send(frm, to, "objection", ref,
+             f"{frm} proceeded with {ref} while you were absent "
+             f"(no activity for over {state.TTL_ABSENT}s). "
+             f"Re-read the file before continuing.")
+    for to, frm, ref in nudges:
+        send(frm, to, "objection", ref,
+             f"nudge: {frm} is still blocked on {ref} and needs your reply "
+             f"(accept or refuse).")
+    return changed
+
+
+def _apply_fallback(now):
+    """An escalated conflict the human never answers cannot stall forever.
+
+    Once the escalated agent has passed ESCALATE_AFTER_INV more gate
+    invocations with no verdict, first claim wins by timestamp: the later
+    declarer yields and is told to adapt, the earlier declarer proceeds.
+    Arbitrary, but predictable beats a stall.
+    """
+    changed, told = [], []
+    with state.locked():
+        data = state.prune(state.load(), now)
+        agents = data["agents"]
+        for aid, row in agents.items():
+            for c in row.get("conflicts", []):
+                if c.get("status") != "escalated":
+                    continue
+                waited = row.get("inv", 0) - c.get("escalated_at_inv", 0)
+                if waited < state.ESCALATE_AFTER_INV:
+                    continue
+                pair = [x for x in (aid, c.get("with")) if x in agents]
+                if len(pair) < 2:
+                    continue
+                loser = max(pair,
+                            key=lambda a: agents[a].get("declared_at", 0))
+                winner = pair[0] if pair[1] == loser else pair[1]
+                for holder in pair:
+                    for cc in agents[holder].get("conflicts", []):
+                        if cc.get("ref") != c["ref"]:
+                            continue
+                        cc["status"] = "resolved"
+                        cc["detail"] += (
+                            f" | no human verdict; first claim wins, "
+                            f"{loser} yields to {winner}"
+                        )
+                        changed.append(cc)
+                    agents[holder].setdefault("resolved", []).append({
+                        "ref": c["ref"], "with": "fallback",
+                        "agreement": f"first claim wins; {loser} yields "
+                                     f"to {winner}",
+                    })
+                told.append((loser, winner, c["ref"]))
+        state.save(data)
+
+    for loser, winner, ref in told:
+        send(winner, loser, "objection", ref,
+             f"no human verdict arrived, so the deterministic fallback "
+             f"applied: first claim wins and you declared later, so you "
+             f"yield on {ref}. Adapt to {winner}'s change.")
+    return changed
+
+
+def escalations():
+    out = []
+    for aid, row in sorted(state.get_all().items()):
+        for c in row.get("conflicts", []):
+            if c.get("status") == "escalated":
+                entry = dict(c)
+                entry["agent"] = aid
+                out.append(entry)
+    return out
+
+
+def resolve(ref, decision):
+    """A verdict on a symbol applies to every pair contending on it — an
+    architectural decision should not need restating per agent pair."""
+    now = time.time()
+    n = 0
+    with state.locked():
+        data = state.prune(state.load(), now)
+        for row in data["agents"].values():
+            for c in row.get("conflicts", []):
+                if c.get("ref") == ref and c.get("status") != "resolved":
+                    c["status"] = "resolved"
+                    row.setdefault("resolved", []).append({
+                        "ref": ref, "with": "human", "agreement": decision,
+                    })
+                    n += 1
+        state.save(data)
+    return n
+
+
+def yield_later_declarer(ref):
+    """Deterministic fallback. Predictable beats a stall."""
+    agents = state.get_all()
+    involved = set()
+    for aid, row in agents.items():
+        for c in row.get("conflicts", []):
+            if c.get("ref") == ref:
+                involved.add(aid)
+                if c.get("with"):
+                    involved.add(c["with"])
+    if not involved:
+        return ""
+    return max(involved,
+               key=lambda a: agents.get(a, {}).get("declared_at", 0))
