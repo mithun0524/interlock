@@ -9,7 +9,7 @@ import os
 import re
 import time
 
-from . import detect, state
+from . import detect, negotiate, state
 
 # ponytail: regex over shell strings. Misses writes inside invoked scripts
 # and python -c. Upgrade path: an mtime-diffing filesystem watcher.
@@ -210,7 +210,7 @@ def run(event, payload):
         code, msg = gate(payload)
         if code == BLOCK:
             return BLOCK, "", msg
-        return ALLOW, "", ""       # message delivery is wired in Task 7
+        return ALLOW, negotiate.format_for_agent(negotiate.drain(me_id)), ""
 
     if event == "PostToolUse":
         if me_id in state.get_all():
