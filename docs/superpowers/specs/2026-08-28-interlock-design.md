@@ -356,6 +356,17 @@ agent unblocks itself in one line.
 Cap of 2 exchanges. Past two rounds agents restate rather than converge.
 Escalate.
 
+### Where the timers actually run
+
+`check_timers` runs **inside the gate, whenever the agent has an unresolved
+conflict** — and nowhere else in the hook path. Being blocked is the only state
+in which a timer matters, so an unblocked agent pays nothing.
+
+This is worth stating explicitly because the first implementation called it only
+from `interlock status`, which meant every mechanism below was dead code in
+practice: an agent waited on a counterparty that had already exited and nothing
+released it, because nothing was watching.
+
 ### Deadlock and the absent agent
 
 The failure mode that would kill this tool is an agent blocked forever on one

@@ -98,3 +98,46 @@ def test_a_claim_block_says_it_will_not_clear(repo):
                          "tool_input": {"file_path": "src/auth.py"}})
     assert "will not clear" in msg
     assert "do not wait" in msg.lower()
+
+
+def test_the_gate_runs_the_timers_when_the_agent_is_blocked(repo):
+    """Regression: check_timers was only ever called from `interlock status`,
+    so the absent-counterparty release, the nudge, the escalation and the
+    first-claim-wins fallback were all dead code in the hook path.
+
+    Observed live: an agent waited for a counterparty that had exited, and
+    nothing released it because nothing was watching.
+    """
+    from interlock import detect
+    wt = state.worktree_root()
+    c = detect.conflict(detect.INTERFACE_BREAK, "getUserFromSession",
+                        "b7d2e0", "referenced in src/api.py")
+    state.upsert("a3f9c1", goal="jwt", globs=["src/auth.py"], worktree=wt,
+                 conflicts=[c])
+    # counterparty exists but its heartbeat is long stale: it is absent
+    state.upsert("b7d2e0", goal="gone", globs=["src/api.py"], worktree=wt)
+    with state.locked():
+        data = state.load()
+        data["agents"]["b7d2e0"]["hb"] = time.time() - state.TTL_ABSENT - 1
+        state.save(data)
+
+    code, _ = hooks.gate({"session_id": "a3f9c1", "tool_name": "Edit",
+                          "tool_input": {"file_path": "src/auth.py"}})
+    assert code == hooks.ALLOW, "absent counterparty should have released it"
+    assert state.get_all()["a3f9c1"]["conflicts"][0]["status"] == "resolved"
+
+
+def test_the_gate_does_not_run_the_timers_when_unblocked(repo):
+    """Only pay the cost while blocked."""
+    calls = []
+    from interlock import negotiate
+    real = negotiate.check_timers
+    try:
+        negotiate.check_timers = lambda *a, **k: (calls.append(1), real(*a, **k))[1]
+        state.upsert("a3f9c1", goal="g", globs=["src/**"],
+                     worktree=state.worktree_root())
+        hooks.gate({"session_id": "a3f9c1", "tool_name": "Edit",
+                    "tool_input": {"file_path": "src/auth.py"}})
+    finally:
+        negotiate.check_timers = real
+    assert calls == []

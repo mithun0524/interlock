@@ -190,6 +190,18 @@ def gate(payload):
     open_conflicts = [c for c in me.get("conflicts", [])
                       if c.get("status") != "resolved"]
     if open_conflicts:
+        # The timers used to run only from `interlock status`, which meant the
+        # absent-counterparty release, the nudge, the escalation and the
+        # first-claim-wins fallback never fired in the hook path at all.
+        # Observed live: an agent waited on a counterparty that had exited and
+        # nothing released it. Run them here, where being blocked is the only
+        # state in which they matter -- so an unblocked agent pays nothing.
+        negotiate.check_timers()
+        agents = state.get_all()
+        me = agents.get(me_id, me)
+        open_conflicts = [c for c in me.get("conflicts", [])
+                          if c.get("status") != "resolved"]
+    if open_conflicts:
         return BLOCK, _conflict_message(open_conflicts, agents)
 
     mine = detect.claimed_paths(me, root)

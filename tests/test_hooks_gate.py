@@ -33,6 +33,11 @@ def test_a_file_claimed_by_another_agent_blocks(repo):
 
 def test_an_open_conflict_blocks_even_on_an_unrelated_file(repo):
     wt = state.worktree_root()
+    # the counterparty must be live: the gate runs the timers while blocked,
+    # and a counterparty missing from the roster is correctly treated as
+    # absent, which releases the conflict
+    state.upsert("b7d2e0", goal="pagination", globs=["src/api.py"],
+                 worktree=wt)
     state.upsert("a3f9c1", goal="mine", globs=["src/**"], worktree=wt,
                  conflicts=[detect.conflict(detect.INTERFACE_BREAK,
                                             "getUserFromSession", "b7d2e0",
