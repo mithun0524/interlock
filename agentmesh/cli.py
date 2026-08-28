@@ -86,11 +86,23 @@ def cmd_declare(args):
         was = prior.get((c["kind"], c["ref"], c.get("with")))
         if was:
             c.update({k: was[k] for k in
-                      ("status", "round", "waiting_since_inv", "nudged")
+                      ("status", "round", "waiting_since_inv", "nudged",
+                       "auto_objected", "escalated_at_inv")
                       if k in was})
 
+    # Mark objections before the write so the conflict statuses land in the
+    # same single upsert; the messages themselves go out afterwards, since
+    # inbox writes cannot tear the declaration.
+    pending = negotiate.plan_objections(agent_id, conflicts, agents)
+
     state.upsert(agent_id, conflicts=conflicts, **fields)
+    negotiate.send_planned(pending)
+
     _print_conflicts(conflicts)
+    if pending:
+        print(f"agentmesh: {len(pending)} objection(s) raised on your behalf "
+              f"by the agents that depend on this. Answer with "
+              f"`agentmesh reply --kind offer`.")
     return 0
 
 

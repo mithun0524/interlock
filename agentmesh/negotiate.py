@@ -302,3 +302,45 @@ def yield_later_declarer(ref):
         return ""
     return max(involved,
                key=lambda a: agents.get(a, {}).get("declared_at", 0))
+
+
+def plan_objections(agent_id, conflicts, agents):
+    """Mark the conflicts an objection should be raised on, and return the
+    messages to send. Touches no state, so the caller can fold the marks into
+    its own single write and send afterwards.
+
+    Observed live: every blocked agent asked its human instead of running
+    `agentmesh reply`, and not one message was exchanged. Requiring two agents
+    to cooperate before anything happens is where it broke.
+
+    For an INTERFACE_BREAK the objection is already a fact in the code -- who
+    depends on the symbol, and in which file -- so the tool can state it on the
+    dependent agent's behalf. Scoped to INTERFACE_BREAK deliberately: a shared
+    file is a scheduling matter, and manufacturing an objection nobody felt
+    would be worse than staying quiet.
+    """
+    pending = []
+    for c in conflicts:
+        if c.get("kind") != "INTERFACE_BREAK" or c.get("auto_objected"):
+            continue
+        other = c.get("with")
+        if not other or other not in agents:
+            continue
+        row = agents[other]
+        body = (
+            f"{other} depends on {c['ref']} ({c['detail']}). "
+            f"Its goal: {row.get('goal', '') or 'unstated'}."
+        )
+        if row.get("progress"):
+            body += f" It has already produced: {row['progress']}"
+        c["auto_objected"] = True
+        c["status"] = "negotiating"
+        pending.append((other, agent_id, c["ref"], body))
+    return pending
+
+
+def send_planned(pending):
+    """Deliver what plan_objections returned. Inbox writes only."""
+    for frm, to, ref, body in pending:
+        send(frm, to, "objection", ref, body)
+    return pending

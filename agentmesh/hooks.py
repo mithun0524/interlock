@@ -133,7 +133,14 @@ def _roster(agents, me_id):
 
 
 def _conflict_message(conflicts, agents):
-    out = ["agentmesh: blocked by unresolved conflicts."]
+    """One conflict, one imperative next step.
+
+    This used to present a numbered set of possibilities. Live runs showed
+    agents reading that as an invitation to stop and consult their human, so
+    nothing was ever negotiated. State the situation, then give exactly one
+    command to run.
+    """
+    out = ["agentmesh: blocked."]
     for c in conflicts:
         other = agents.get(c.get("with"), {})
         out.append(
@@ -145,17 +152,24 @@ def _conflict_message(conflicts, agents):
         if other.get("progress"):
             # the output half: intent alone is not enough to adapt to
             out.append(f"      produced so far: {other['progress']}")
-        if c["kind"] == detect.GOD_SYMBOL:
-            out.append(
-                "      repo-wide change — ask the human, then: "
-                f"agentmesh resolve --ref {c['ref']} --decision \"<verdict>\""
-            )
-        else:
-            out.append(
-                "      you are blocked, so you propose: "
-                f"agentmesh reply --to {c.get('with')} --kind offer "
-                f"--ref {c['ref']} --msg \"<shim / migration / other approach>\""
-            )
+
+    lead = conflicts[0]
+    if lead["kind"] == detect.GOD_SYMBOL:
+        out.append(
+            f"Next step: agentmesh resolve --ref {lead['ref']} "
+            f"--decision \"<verdict>\"   "
+            f"(repo-wide change; this one needs a human verdict)"
+        )
+    else:
+        out.append(
+            f"Next step: agentmesh reply --to {lead.get('with')} "
+            f"--kind offer --ref {lead['ref']} "
+            f"--msg \"<a shim, a migration, or a different approach>\""
+        )
+        out.append(
+            "Propose something concrete — you are the blocked party, so the "
+            "move is yours. Do not stop here for a human."
+        )
     return "\n".join(out)
 
 
@@ -193,9 +207,11 @@ def gate(payload):
                     f"  its goal: {row.get('goal', '')}\n"
                     f"  produced so far: {row.get('progress') or '(nothing yet)'}\n"
                     f"  idle for: {held}s\n"
-                    f"Work on another file, or negotiate:\n"
-                    f"  agentmesh reply --to {aid} --kind objection "
-                    f"--ref {rel} --msg \"<why you need it>\""
+                    f"Next step: agentmesh reply --to {aid} "
+                    f"--kind objection --ref {rel} "
+                    f"--msg \"<why you need this file>\"\n"
+                    f"Or work on a different file. Either way the move is "
+                    f"yours — do not stop here for a human."
                 )
         if rel not in mine and not detect.matches_globs(
                 rel, me.get("globs", [])):

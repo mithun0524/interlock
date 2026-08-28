@@ -47,16 +47,20 @@ def test_full_remove_objection_accept_cycle(repo):
     # why the gate must match globs by pattern and not only tracked files.
     assert _write("cccccc", "docs/guide.md")[0] == hooks.ALLOW
 
-    # B objects.
-    assert cli.main(["--id", "bbbbbb", "reply", "--to", "aaaaaa",
-                     "--kind", "objection", "--ref", "getUserFromSession",
-                     "--msg", "src/api.py calls this on every request"]) == 0
-
-    # A is still blocked, and B's objection is waiting in A's inbox.
-    assert _write("aaaaaa", "src/auth.py")[0] == hooks.BLOCK
+    # B never has to act: the objection was raised on its behalf at A's
+    # declare, because the dependency is a fact in the code. Without this,
+    # live runs exchanged zero messages -- both agents waited for the other.
     pending = negotiate.drain("aaaaaa")
     assert [m["kind"] for m in pending] == ["objection"]
-    assert "every request" in pending[0]["msg"]
+    assert pending[0]["from"] == "bbbbbb"
+    assert "src/api.py" in pending[0]["msg"]
+    assert "add pagination" in pending[0]["msg"]      # B's goal, for context
+
+    # A is still blocked, and the block names one command, not a menu.
+    code, _, err = _write("aaaaaa", "src/auth.py")
+    assert code == hooks.BLOCK
+    assert "Next step: agentmesh reply" in err
+    assert err.count("agentmesh reply") == 1
 
     # A proposes a shim.
     assert cli.main(["--id", "aaaaaa", "reply", "--to", "bbbbbb",
