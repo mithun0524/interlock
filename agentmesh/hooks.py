@@ -89,13 +89,22 @@ def agent_id(payload):
 ALLOW = 0
 BLOCK = 2
 
-_DECLARE_HINT = (
-    "agentmesh: declare your intent before editing.\n"
-    "Run: agentmesh declare --goal \"<one sentence>\" "
-    "--globs \"<paths you will touch>\" "
-    "[--removes SYM] [--sig SYM] [--deps SYM] "
-    "[--progress \"<what you have produced>\"]"
-)
+def declare_hint(me_id=""):
+    """The hint must carry the agent's own id.
+
+    The gate keys off session_id from the hook payload; the CLI cannot
+    discover that on its own, and an agent left to guess will invent a name
+    that the gate then never matches -- blocking it forever while it believes
+    it has declared. The payload always has the id, so hand it over.
+    """
+    ident = f"--id {me_id} " if me_id else ""
+    return (
+        "agentmesh: declare your intent before editing.\n"
+        f"Run: agentmesh declare {ident}--goal \"<one sentence>\" "
+        "--globs \"<paths you will touch>\" "
+        "[--removes SYM] [--sig SYM] [--deps SYM] "
+        "[--progress \"<what you have produced>\"]"
+    )
 
 
 def _rel(path, root):
@@ -159,7 +168,7 @@ def gate(payload):
     agents = state.get_all()
     me = agents.get(me_id)
     if me is None:
-        return BLOCK, _DECLARE_HINT
+        return BLOCK, declare_hint(me_id)
 
     state.bump(me_id)
     root = state.worktree_root()
@@ -194,7 +203,8 @@ def gate(payload):
                 f"agentmesh: {rel} is outside your declared globs "
                 f"({', '.join(me.get('globs', [])) or 'none'}).\n"
                 f"Re-declare to widen your claim and re-run detection:\n"
-                f"  agentmesh declare --goal \"{me.get('goal', '')}\" "
+                f"  agentmesh declare --id {me_id} "
+                f"--goal \"{me.get('goal', '')}\" "
                 f"--globs \"{' '.join(me.get('globs', []) + [rel])}\""
             )
     return ALLOW, ""
@@ -206,7 +216,7 @@ def run(event, payload):
 
     if event == "SessionStart":
         agents = state.get_all()
-        ctx = _roster(agents, me_id) + "\n" + _DECLARE_HINT
+        ctx = _roster(agents, me_id) + "\n" + declare_hint(me_id)
         return ALLOW, ctx, ""
 
     if event == "PreToolUse":

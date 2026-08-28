@@ -113,3 +113,29 @@ def test_session_start_injects_the_roster(repo):
     code, out, _ = hooks.run("SessionStart", {"session_id": "a3f9c1"})
     assert code == hooks.ALLOW
     assert "b7d2e0" in out and "patch auth" in out
+
+
+def test_the_declare_hint_carries_the_agents_own_id(repo):
+    """Regression: found by a live 3-agent run.
+
+    Without its id in the hint, an agent invents one (`claude-main`), the
+    gate keys off session_id[:6] (`a3f9c1`), the two never match, and the
+    gate answers 'declare your intent' forever to an agent that already
+    declared. Silent and total.
+    """
+    code, msg = hooks.gate(_payload())
+    assert code == hooks.BLOCK
+    assert "--id a3f9c1" in msg
+
+
+def test_the_redeclare_hint_also_carries_the_id(repo):
+    state.upsert("a3f9c1", goal="g", globs=["docs/**"],
+                 worktree=state.worktree_root())
+    code, msg = hooks.gate(_payload())
+    assert code == hooks.BLOCK
+    assert "--id a3f9c1" in msg
+
+
+def test_session_start_hint_carries_the_id(repo):
+    _, out, _ = hooks.run("SessionStart", {"session_id": "a3f9c1xxxx"})
+    assert "--id a3f9c1" in out

@@ -153,5 +153,16 @@ def test_resolve_agent_id_falls_back_to_the_only_active_agent(repo,
                                                               monkeypatch):
     monkeypatch.delenv("AGENTMESH_ID", raising=False)
     monkeypatch.delenv("CLAUDE_SESSION_ID", raising=False)
+    monkeypatch.delenv("CLAUDE_CODE_SESSION_ID", raising=False)
     state.upsert("solo01", goal="g", worktree=state.worktree_root())
     assert cli.resolve_agent_id() == "solo01"
+
+
+def test_resolve_agent_id_reads_the_env_var_claude_code_actually_exports(
+        repo, monkeypatch):
+    """Regression: the code originally looked for CLAUDE_SESSION_ID, which
+    Claude Code does not export. The real name is CLAUDE_CODE_SESSION_ID."""
+    monkeypatch.delenv("AGENTMESH_ID", raising=False)
+    monkeypatch.delenv("CLAUDE_SESSION_ID", raising=False)
+    monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "a3f9c1de-dead-beef")
+    assert cli.resolve_agent_id() == "a3f9c1"

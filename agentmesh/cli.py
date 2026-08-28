@@ -12,12 +12,18 @@ from . import detect, hooks, install, negotiate, state
 def resolve_agent_id(explicit=None):
     if explicit:
         return explicit
-    sid = os.environ.get("CLAUDE_SESSION_ID")
-    if sid:
-        return sid[:6]
+    # Explicit beats ambient: AGENTMESH_ID is something a human or script
+    # set on purpose, while a session id is merely inherited from whatever
+    # process happens to be the parent.
     env = os.environ.get("AGENTMESH_ID")
     if env:
         return env
+    # CLAUDE_CODE_SESSION_ID is the name Claude Code actually exports;
+    # CLAUDE_SESSION_ID is kept only as a fallback for other harnesses.
+    for var in ("CLAUDE_CODE_SESSION_ID", "CLAUDE_SESSION_ID"):
+        sid = os.environ.get(var)
+        if sid:
+            return sid[:6]
     here = state.worktree_root()
     mine = [aid for aid, row in state.get_all().items()
             if row.get("worktree") == here]
