@@ -6,7 +6,7 @@ import json
 import os
 import sys
 
-from . import detect, hooks, negotiate, state
+from . import detect, hooks, install, negotiate, state
 
 
 def resolve_agent_id(explicit=None):
@@ -157,6 +157,14 @@ def cmd_hook(args):
     return code
 
 
+def cmd_init(args):
+    path = install.install(state.worktree_root(), local=args.local)
+    scope = "this developer only" if args.local else "everyone who clones"
+    print(f"agentmesh: hooks installed in {path} ({scope}).")
+    print("Agents in this repo will now be asked to declare before editing.")
+    return 0
+
+
 def build_parser():
     p = argparse.ArgumentParser(prog="agentmesh")
     p.add_argument("--id", help="agent id (default: session id prefix)")
@@ -194,6 +202,11 @@ def build_parser():
     h = sub.add_parser("hook", help="internal; reads hook JSON on stdin")
     h.add_argument("--event", required=True)
     h.set_defaults(func=cmd_hook)
+
+    i = sub.add_parser("init", help="install the hooks into this repo")
+    i.add_argument("--local", action="store_true",
+                   help="write settings.local.json instead of settings.json")
+    i.set_defaults(func=cmd_init)
 
     return p
 
