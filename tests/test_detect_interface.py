@@ -84,3 +84,39 @@ def test_own_claimed_files_are_not_conflicts(repo):
     me = _row(deltas=[{"kind": "remove", "symbol": "getUserFromSession"}],
               globs=["src/**"])
     assert detect.interface_conflicts(me, {}, str(repo)) == []
+
+
+def test_an_untracked_file_is_visible_to_detection(repo):
+    """Regression: found by a live 3-agent run.
+
+    An agent wrote docs/guide.md referencing getUserFromSession while
+    another agent deleted it in the same session. Nothing fired, because
+    git ls-files and git grep only see tracked content -- and a new file is
+    exactly the kind that references what someone else is removing.
+    """
+    (repo / "docs").mkdir(exist_ok=True)
+    (repo / "docs" / "guide.md").write_text(
+        "Endpoints authenticate via getUserFromSession(req).\n"
+    )
+    hits = detect.refs_for_symbol("getUserFromSession", str(repo), {})
+    assert "docs/guide.md" in hits
+
+
+def test_an_ignored_file_stays_invisible(repo):
+    """--untracked must not drag in build output or vendored trees."""
+    (repo / ".gitignore").write_text("build/\n")
+    (repo / "build").mkdir()
+    (repo / "build" / "bundle.js").write_text("getUserFromSession()\n")
+    hits = detect.refs_for_symbol("getUserFromSession", str(repo), {})
+    assert not any(h.startswith("build/") for h in hits)
+
+
+def test_untracked_dependent_file_raises_interface_break(repo):
+    (repo / "docs").mkdir(exist_ok=True)
+    (repo / "docs" / "guide.md").write_text("uses getUserFromSession(req)\n")
+    me = _row(deltas=[{"kind": "remove", "symbol": "getUserFromSession"}],
+              globs=["src/**"])
+    them = {"ccc111": _row(globs=["docs/**"], goal="write docs")}
+    got = detect.interface_conflicts(me, them, str(repo))
+    assert [c["kind"] for c in got] == [detect.INTERFACE_BREAK]
+    assert "docs/guide.md" in got[0]["detail"]

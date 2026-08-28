@@ -17,9 +17,20 @@ def test_expand_matches_an_exact_path(repo):
     assert detect.expand(["src/auth.py"], str(repo)) == {"src/auth.py"}
 
 
-def test_expand_ignores_untracked_files(repo):
+def test_expand_includes_untracked_but_not_ignored_files(repo):
+    """A new file is exactly the kind that references what another agent is
+    removing, so detection must see it before it is ever committed."""
     (repo / "src" / "scratch.py").write_text("x = 1\n")
-    assert "src/scratch.py" not in detect.expand(["src/**"], str(repo))
+    assert "src/scratch.py" in detect.expand(["src/**"], str(repo))
+
+
+def test_expand_excludes_ignored_files(repo):
+    """...but not build output or vendored trees."""
+    (repo / ".gitignore").write_text("src/generated/\n")
+    (repo / "src" / "generated").mkdir()
+    (repo / "src" / "generated" / "out.py").write_text("x = 1\n")
+    got = detect.expand(["src/**"], str(repo))
+    assert not any(g.startswith("src/generated/") for g in got)
 
 
 def test_matches_globs_covers_files_that_do_not_exist_yet(repo):

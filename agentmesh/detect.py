@@ -16,11 +16,22 @@ GOAL_OVERLAP = "GOAL_OVERLAP"
 
 
 def tracked_files(root):
-    out = subprocess.run(
-        ["git", "ls-files"], cwd=root, capture_output=True, text=True,
-        check=False,
-    )
-    return [l for l in out.stdout.splitlines() if l]
+    """Tracked files plus untracked-but-not-ignored ones.
+
+    Agents create files constantly, and a brand-new file is exactly the kind
+    that references something another agent is removing. Restricting this to
+    `git ls-files` made every such file invisible to detection -- observed
+    live: an agent wrote docs describing a function another agent deleted in
+    the same session, and nothing fired.
+    """
+    files = []
+    for args in (["ls-files"], ["ls-files", "--others", "--exclude-standard"]):
+        out = subprocess.run(
+            ["git", *args], cwd=root, capture_output=True, text=True,
+            check=False,
+        )
+        files += [l for l in out.stdout.splitlines() if l]
+    return sorted(set(files))
 
 
 def _to_regex(pattern):
@@ -123,11 +134,13 @@ def save_refcache(cache):
 def _grep(symbol, root, path=None):
     """git grep is always present in a git repo. rg is used only if found."""
     if shutil.which("rg"):
+        # rg searches untracked files by default, honouring .gitignore
         cmd = ["rg", "-l", "-w", "--", symbol]
         if path:
             cmd.append(path)
     else:
-        cmd = ["git", "grep", "-l", "-w", "-e", symbol]
+        # --untracked, for the same reason tracked_files() includes them
+        cmd = ["git", "grep", "-l", "-w", "--untracked", "-e", symbol]
         if path:
             cmd += ["--", path]
     out = subprocess.run(cmd, cwd=root, capture_output=True, text=True,
