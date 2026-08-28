@@ -96,7 +96,11 @@ def test_reply_rejects_an_unknown_recipient(repo, capsys, monkeypatch):
     assert "no active agent" in capsys.readouterr().err
 
 
-def test_resolve_records_the_human_verdict(repo):
+def test_resolve_records_the_human_verdict(repo, monkeypatch):
+    # resolve is a human command; clear the agent-session markers the test
+    # suite inherits from the harness it runs under
+    for var in ("CLAUDECODE", "CLAUDE_CODE_SESSION_ID", "CLAUDE_SESSION_ID"):
+        monkeypatch.delenv(var, raising=False)
     from agentmesh import detect
     c = detect.conflict(detect.INTERFACE_BREAK, "getUserFromSession",
                         "b7d2e0", "d")

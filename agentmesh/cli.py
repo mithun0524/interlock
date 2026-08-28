@@ -154,7 +154,38 @@ def cmd_reply(args):
     return 0
 
 
+_AGENT_ENV = ("CLAUDECODE", "CLAUDE_CODE_SESSION_ID", "CLAUDE_SESSION_ID")
+
+
+def _looks_like_an_agent():
+    """Guardrail, not security.
+
+    The trust model has no boundary between agents -- anything here is
+    bypassable by an agent that means to. But observed live, an agent reached
+    for `agentmesh resolve` to unblock itself the moment its counterparty went
+    away, which skips the negotiation entirely. That is a larger bypass than
+    the forged accept that IS guarded, so the path worth closing is the one an
+    agent actually takes.
+    """
+    if os.environ.get("AGENTMESH_ALLOW_AGENT_RESOLVE"):
+        return False
+    return any(os.environ.get(v) for v in _AGENT_ENV)
+
+
 def cmd_resolve(args):
+    if _looks_like_an_agent():
+        print(
+            "agentmesh: resolve records a HUMAN verdict and cannot be run from "
+            "inside an agent session.\n"
+            f"  Negotiate instead: agentmesh reply --kind offer --ref "
+            f"{args.ref} --msg \"<a shim, a migration, or another approach>\"\n"
+            "  If the other agent is gone, it is released automatically once "
+            "its heartbeat goes stale.\n"
+            "  Automation that legitimately needs this: set "
+            "AGENTMESH_ALLOW_AGENT_RESOLVE=1.",
+            file=sys.stderr,
+        )
+        return 1
     n = negotiate.resolve(args.ref, args.decision)
     print(f"agentmesh: verdict recorded on {args.ref}, "
           f"{n} conflict(s) resolved.")
