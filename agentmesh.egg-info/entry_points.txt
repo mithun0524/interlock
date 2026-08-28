@@ -1,0 +1,2 @@
+[console_scripts]
+agentmesh = agentmesh.cli:main
