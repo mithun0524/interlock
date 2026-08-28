@@ -101,6 +101,11 @@ Read these before trusting agentmesh with anything that matters.
   finish before long ones reach them, so agentmesh does nothing — which looks
   like success and is not. If you are evaluating it, make sure your agents
   actually overlap before concluding anything.
+- **`accept` is binary; agents answer in conditions.** A live run produced the
+  accept *"go ahead once I confirm tests pass — will ping shortly."* agentmesh
+  recorded it as unconditional, opened the gate at once, and no ping ever came.
+  The outcome happened to be fine. Treat a recorded agreement as "the other
+  agent did not object", not as "the precondition it named was met".
 - **Coordination costs turns.** Each negotiation round is tool calls an agent
   spends not writing code. In one live run a 20-turn agent negotiated
   correctly, then hit its cap mid-refactor and left a call site pointing at a
