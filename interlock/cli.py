@@ -1,4 +1,4 @@
-"""One binary, two faces: `agentmesh hook` for hooks, the rest for agents
+"""One binary, two faces: `interlock hook` for hooks, the rest for agents
 and humans."""
 
 import argparse
@@ -12,10 +12,10 @@ from . import detect, hooks, install, negotiate, state
 def resolve_agent_id(explicit=None):
     if explicit:
         return explicit
-    # Explicit beats ambient: AGENTMESH_ID is something a human or script
+    # Explicit beats ambient: INTERLOCK_ID is something a human or script
     # set on purpose, while a session id is merely inherited from whatever
     # process happens to be the parent.
-    env = os.environ.get("AGENTMESH_ID")
+    env = os.environ.get("INTERLOCK_ID")
     if env:
         return env
     # CLAUDE_CODE_SESSION_ID is the name Claude Code actually exports;
@@ -30,17 +30,17 @@ def resolve_agent_id(explicit=None):
     if len(mine) == 1:
         return mine[0]
     raise SystemExit(
-        "agentmesh: cannot tell which agent you are. Pass --id, or set "
-        "AGENTMESH_ID."
+        "interlock: cannot tell which agent you are. Pass --id, or set "
+        "INTERLOCK_ID."
     )
 
 
 def _print_conflicts(conflicts):
     if not conflicts:
-        print("agentmesh: declared, no conflicts.")
+        print("interlock: declared, no conflicts.")
         return
     blocking = [c for c in conflicts if c.get("status") != "resolved"]
-    print(f"agentmesh: declared, {len(conflicts)} conflict(s) "
+    print(f"interlock: declared, {len(conflicts)} conflict(s) "
           f"({len(blocking)} blocking):")
     for c in conflicts:
         flag = " (advisory)" if c.get("status") == "resolved" else ""
@@ -56,7 +56,7 @@ def cmd_declare(args):
     try:
         detect.validate_symbols(deltas, args.deps)
     except detect.SymbolTooVague as e:
-        print(f"agentmesh: {e}", file=sys.stderr)
+        print(f"interlock: {e}", file=sys.stderr)
         return 1
 
     root = state.worktree_root()
@@ -100,9 +100,9 @@ def cmd_declare(args):
 
     _print_conflicts(conflicts)
     if pending:
-        print(f"agentmesh: {len(pending)} objection(s) raised on your behalf "
+        print(f"interlock: {len(pending)} objection(s) raised on your behalf "
               f"by the agents that depend on this. Answer with "
-              f"`agentmesh reply --kind offer`.")
+              f"`interlock reply --kind offer`.")
     return 0
 
 
@@ -114,9 +114,9 @@ def cmd_status(args):
                           "escalations": negotiate.escalations()}, indent=2))
         return 0
     if not agents:
-        print("agentmesh: no active agents.")
+        print("interlock: no active agents.")
         return 0
-    print(f"agentmesh: {len(agents)} active agent(s)")
+    print(f"interlock: {len(agents)} active agent(s)")
     for aid, row in sorted(agents.items()):
         print(f"\n  {aid}  {row.get('goal', '')}")
         print(f"    worktree: {row.get('worktree', '')}")
@@ -133,7 +133,7 @@ def cmd_status(args):
         for c in esc:
             print(f"  {c['ref']}: {c['detail']}")
             print(f"    agent {c['agent']} vs {c.get('with') or '(repo)'}")
-            print(f"    agentmesh resolve --ref {c['ref']} "
+            print(f"    interlock resolve --ref {c['ref']} "
                   f"--decision \"<verdict>\"")
     return 0
 
@@ -141,16 +141,16 @@ def cmd_status(args):
 def cmd_reply(args):
     agent_id = resolve_agent_id(args.id)
     if args.to not in state.get_all():
-        print(f"agentmesh: no active agent {args.to!r}. "
-              f"Run `agentmesh status` to see who is here.", file=sys.stderr)
+        print(f"interlock: no active agent {args.to!r}. "
+              f"Run `interlock status` to see who is here.", file=sys.stderr)
         return 1
     msg = negotiate.send(agent_id, args.to, args.kind, args.ref, args.msg)
     try:
         negotiate.apply(msg)
     except negotiate.ForgedAccept as e:
-        print(f"agentmesh: {e}", file=sys.stderr)
+        print(f"interlock: {e}", file=sys.stderr)
         return 1
-    print(f"agentmesh: {args.kind} sent to {args.to} re {args.ref}")
+    print(f"interlock: {args.kind} sent to {args.to} re {args.ref}")
     return 0
 
 
@@ -162,12 +162,12 @@ def _looks_like_an_agent():
 
     The trust model has no boundary between agents -- anything here is
     bypassable by an agent that means to. But observed live, an agent reached
-    for `agentmesh resolve` to unblock itself the moment its counterparty went
+    for `interlock resolve` to unblock itself the moment its counterparty went
     away, which skips the negotiation entirely. That is a larger bypass than
     the forged accept that IS guarded, so the path worth closing is the one an
     agent actually takes.
     """
-    if os.environ.get("AGENTMESH_ALLOW_AGENT_RESOLVE"):
+    if os.environ.get("INTERLOCK_ALLOW_AGENT_RESOLVE"):
         return False
     return any(os.environ.get(v) for v in _AGENT_ENV)
 
@@ -175,19 +175,19 @@ def _looks_like_an_agent():
 def cmd_resolve(args):
     if _looks_like_an_agent():
         print(
-            "agentmesh: resolve records a HUMAN verdict and cannot be run from "
+            "interlock: resolve records a HUMAN verdict and cannot be run from "
             "inside an agent session.\n"
-            f"  Negotiate instead: agentmesh reply --kind offer --ref "
+            f"  Negotiate instead: interlock reply --kind offer --ref "
             f"{args.ref} --msg \"<a shim, a migration, or another approach>\"\n"
             "  If the other agent is gone, it is released automatically once "
             "its heartbeat goes stale.\n"
             "  Automation that legitimately needs this: set "
-            "AGENTMESH_ALLOW_AGENT_RESOLVE=1.",
+            "INTERLOCK_ALLOW_AGENT_RESOLVE=1.",
             file=sys.stderr,
         )
         return 1
     n = negotiate.resolve(args.ref, args.decision)
-    print(f"agentmesh: verdict recorded on {args.ref}, "
+    print(f"interlock: verdict recorded on {args.ref}, "
           f"{n} conflict(s) resolved.")
     return 0
 
@@ -195,7 +195,7 @@ def cmd_resolve(args):
 def cmd_release(args):
     agent_id = resolve_agent_id(args.id)
     state.upsert(agent_id, state="done")
-    print(f"agentmesh: {agent_id} released its claims.")
+    print(f"interlock: {agent_id} released its claims.")
     return 0
 
 
@@ -218,13 +218,13 @@ def cmd_hook(args):
 def cmd_init(args):
     path = install.install(state.worktree_root(), local=args.local)
     scope = "this developer only" if args.local else "everyone who clones"
-    print(f"agentmesh: hooks installed in {path} ({scope}).")
+    print(f"interlock: hooks installed in {path} ({scope}).")
     print("Agents in this repo will now be asked to declare before editing.")
     return 0
 
 
 def build_parser():
-    p = argparse.ArgumentParser(prog="agentmesh")
+    p = argparse.ArgumentParser(prog="interlock")
     p.add_argument("--id", help="agent id (default: session id prefix)")
     sub = p.add_subparsers(dest="cmd", required=True)
 

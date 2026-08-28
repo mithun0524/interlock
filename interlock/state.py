@@ -1,6 +1,6 @@
 """The only module that touches disk.
 
-Everything else in agentmesh takes and returns plain dicts, which is what
+Everything else in interlock takes and returns plain dicts, which is what
 makes it testable without a filesystem.
 """
 
@@ -21,7 +21,7 @@ ROUND_CAP = 2
 NUDGE_AFTER_INV = 2
 ESCALATE_AFTER_INV = 4
 
-_DIRNAME = "agentmesh"
+_DIRNAME = "interlock"
 
 
 def _git(*args):
@@ -32,7 +32,7 @@ def _git(*args):
 
 
 def state_dir():
-    """<git-common-dir>/agentmesh — shared by every worktree of the repo.
+    """<git-common-dir>/interlock — shared by every worktree of the repo.
 
     git prints --git-common-dir relative to cwd when cwd is the toplevel and
     absolute otherwise, so abspath covers both without needing git >= 2.31's
@@ -40,7 +40,7 @@ def state_dir():
     """
     common = _git("rev-parse", "--git-common-dir")
     if not common:
-        raise RuntimeError("agentmesh must run inside a git repository")
+        raise RuntimeError("interlock must run inside a git repository")
     d = pathlib.Path(os.path.abspath(common)) / _DIRNAME
     (d / "inbox").mkdir(parents=True, exist_ok=True)
     return d

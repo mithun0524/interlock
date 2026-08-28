@@ -1,6 +1,6 @@
 import pytest
 
-from agentmesh import detect, negotiate, state
+from interlock import detect, negotiate, state
 
 
 def _setup_conflict(repo):

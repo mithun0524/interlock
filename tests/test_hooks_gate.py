@@ -1,6 +1,6 @@
 import time
 
-from agentmesh import detect, hooks, state
+from interlock import detect, hooks, state
 
 
 def _payload(sid="a3f9c1", tool="Edit", path="src/auth.py"):
@@ -11,7 +11,7 @@ def _payload(sid="a3f9c1", tool="Edit", path="src/auth.py"):
 def test_undeclared_agent_is_blocked_with_instructions(repo):
     code, msg = hooks.gate(_payload())
     assert code == hooks.BLOCK
-    assert "agentmesh declare" in msg
+    assert "interlock declare" in msg
 
 
 def test_declared_agent_editing_its_own_file_passes(repo):

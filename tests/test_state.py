@@ -1,12 +1,12 @@
 import json
 import time
 
-from agentmesh import state
+from interlock import state
 
 
 def test_state_dir_is_inside_git_common_dir(repo):
     d = state.state_dir()
-    assert d == repo / ".git" / "agentmesh"
+    assert d == repo / ".git" / "interlock"
     assert d.is_dir()
 
 

@@ -1,11 +1,11 @@
 """Auto-objection and imperative block messages.
 
 Both come from a live 3-agent run in which every agent, when blocked, chose
-to ask its human instead of running `agentmesh reply` -- despite the message
+to ask its human instead of running `interlock reply` -- despite the message
 naming that command. Zero messages were exchanged across the whole run.
 """
 
-from agentmesh import cli, detect, hooks, negotiate, state
+from interlock import cli, detect, hooks, negotiate, state
 
 
 def _payload(sid="a3f9c1", path="src/auth.py"):
@@ -17,7 +17,7 @@ def _declared_pair(repo, monkeypatch):
     """B claims the file that calls getUserFromSession; A declares removing it."""
     state.upsert("b7d2e0", goal="add pagination", globs=["src/api.py"],
                  worktree=state.worktree_root())
-    monkeypatch.setenv("AGENTMESH_ID", "a3f9c1")
+    monkeypatch.setenv("INTERLOCK_ID", "a3f9c1")
     assert cli.main(["declare", "--goal", "jwt migration",
                      "--globs", "src/auth.py",
                      "--removes", "getUserFromSession"]) == 0
@@ -55,7 +55,7 @@ def test_file_overlap_gets_no_auto_objection(repo, monkeypatch):
     tool must not manufacture an objection nobody felt."""
     state.upsert("b7d2e0", goal="patch auth", globs=["src/auth.py"],
                  worktree=state.worktree_root())
-    monkeypatch.setenv("AGENTMESH_ID", "a3f9c1")
+    monkeypatch.setenv("INTERLOCK_ID", "a3f9c1")
     cli.main(["declare", "--goal", "also auth", "--globs", "src/auth.py"])
     kinds = {c["kind"] for c in state.get_all()["a3f9c1"]["conflicts"]}
     assert detect.FILE_OVERLAP in kinds
@@ -65,7 +65,7 @@ def test_file_overlap_gets_no_auto_objection(repo, monkeypatch):
 def test_god_symbol_gets_no_auto_objection(repo, monkeypatch):
     """No counterparty to object on behalf of."""
     monkeypatch.setattr(state, "GOD_SYMBOL_REFS", 0)
-    monkeypatch.setenv("AGENTMESH_ID", "a3f9c1")
+    monkeypatch.setenv("INTERLOCK_ID", "a3f9c1")
     cli.main(["declare", "--goal", "g", "--globs", "src/auth.py",
               "--removes", "getUserFromSession"])
     assert negotiate.drain("a3f9c1") == []
@@ -83,7 +83,7 @@ def test_conflict_block_gives_one_imperative_next_step(repo):
     code, msg = hooks.gate(_payload())
     assert code == hooks.BLOCK
     assert "Next step:" in msg
-    assert msg.count("agentmesh reply") == 1     # exactly one command offered
+    assert msg.count("interlock reply") == 1     # exactly one command offered
     assert "ask" not in msg.lower()              # never suggest escalating
 
 
@@ -95,7 +95,7 @@ def test_claim_block_gives_one_imperative_next_step(repo):
     code, msg = hooks.gate(_payload())
     assert code == hooks.BLOCK
     assert "Next step:" in msg
-    assert msg.count("agentmesh reply") == 1
+    assert msg.count("interlock reply") == 1
 
 
 def test_god_symbol_block_directs_to_the_human_verdict(repo):
@@ -107,13 +107,13 @@ def test_god_symbol_block_directs_to_the_human_verdict(repo):
                                  status="escalated")])
     code, msg = hooks.gate(_payload())
     assert code == hooks.BLOCK
-    assert "agentmesh resolve" in msg
-    assert "agentmesh reply" not in msg
+    assert "interlock resolve" in msg
+    assert "interlock reply" not in msg
 
 
 def test_resolve_refuses_when_invoked_from_inside_an_agent(repo, capsys,
                                                            monkeypatch):
-    """Found live: an agent ran `agentmesh resolve` to unblock itself, which
+    """Found live: an agent ran `interlock resolve` to unblock itself, which
     skips the negotiation entirely -- a bigger bypass than the forged accept
     that IS guarded. A guardrail, not security: the trust model has no
     boundary between agents, but this closes the path an agent will take."""
@@ -122,7 +122,7 @@ def test_resolve_refuses_when_invoked_from_inside_an_agent(repo, capsys,
     state.upsert("a3f9c1", goal="a", conflicts=[c],
                  worktree=state.worktree_root())
     monkeypatch.setenv("CLAUDECODE", "1")
-    monkeypatch.delenv("AGENTMESH_ALLOW_AGENT_RESOLVE", raising=False)
+    monkeypatch.delenv("INTERLOCK_ALLOW_AGENT_RESOLVE", raising=False)
 
     rc = cli.main(["resolve", "--ref", "getUserFromSession",
                    "--decision", "I unblock myself"])
@@ -150,7 +150,7 @@ def test_the_escape_hatch_allows_resolve_in_automation(repo, monkeypatch):
     state.upsert("a3f9c1", goal="a", conflicts=[c],
                  worktree=state.worktree_root())
     monkeypatch.setenv("CLAUDECODE", "1")
-    monkeypatch.setenv("AGENTMESH_ALLOW_AGENT_RESOLVE", "1")
+    monkeypatch.setenv("INTERLOCK_ALLOW_AGENT_RESOLVE", "1")
     assert cli.main(["resolve", "--ref", "getUserFromSession",
                      "--decision", "CI decided"]) == 0
 
@@ -165,4 +165,4 @@ def test_the_gate_never_suggests_resolve_for_a_negotiable_conflict(repo):
                                             "getUserFromSession", "b7d2e0",
                                             "referenced in src/api.py")])
     _, msg = hooks.gate(_payload())
-    assert "agentmesh resolve" not in msg
+    assert "interlock resolve" not in msg

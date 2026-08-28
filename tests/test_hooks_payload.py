@@ -1,6 +1,6 @@
 import pytest
 
-from agentmesh import hooks
+from interlock import hooks
 
 WRITES = [
     ("cat > src/auth.py <<'EOF'\nx\nEOF", ["src/auth.py"]),

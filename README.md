@@ -1,4 +1,4 @@
-# agentmesh
+# interlock
 
 Coordination for 3-7 AI coding agents working the same repository.
 
@@ -12,15 +12,15 @@ while Agent B is building on it. Both sessions report success. Nothing looks
 wrong until the repo is broken. A lock table cannot catch this: the removal and
 the dependency live in different files.
 
-agentmesh makes agents declare what they are doing, detects that class of
+interlock makes agents declare what they are doing, detects that class of
 conflict before either agent commits, and lets the two settle it without you.
 
 ## Install
 
 ```bash
-pip install agentmesh
+pip install interlock
 cd your-repo
-agentmesh init          # --local to install for yourself, not everyone who clones
+interlock init          # --local to install for yourself, not everyone who clones
 ```
 
 That is the whole setup. `init` writes four hook entries into
@@ -45,7 +45,7 @@ without configuring each session by hand.
 
 ## Worktrees
 
-State lives in `<git-common-dir>/agentmesh`, and every worktree of a repo shares
+State lives in `<git-common-dir>/interlock`, and every worktree of a repo shares
 one common dir. So agents in one checkout and agents in separate worktrees
 coordinate automatically, with no mode to configure.
 
@@ -57,19 +57,19 @@ conflict, because that surfaces at merge, which is too late.
 ## Commands
 
 ```
-agentmesh init                 # install the hooks into this repo
-agentmesh declare --goal ... --globs ... [--removes SYM] [--sig SYM]
+interlock init                 # install the hooks into this repo
+interlock declare --goal ... --globs ... [--removes SYM] [--sig SYM]
                   [--adds SYM] [--deps SYM] [--progress "..."]
-agentmesh status [--json]      # roster, conflicts, pending decisions
-agentmesh reply --to ID --kind objection|offer|accept|refuse --ref S --msg ...
-agentmesh resolve --ref S --decision ...     # your verdict on a deadlock
-agentmesh release              # drop claims
-agentmesh hook --event E       # internal; reads hook JSON on stdin
+interlock status [--json]      # roster, conflicts, pending decisions
+interlock reply --to ID --kind objection|offer|accept|refuse --ref S --msg ...
+interlock resolve --ref S --decision ...     # your verdict on a deadlock
+interlock release              # drop claims
+interlock hook --event E       # internal; reads hook JSON on stdin
 ```
 
 ## Limitations
 
-Read these before trusting agentmesh with anything that matters.
+Read these before trusting interlock with anything that matters.
 
 - **Enforcement is strong-by-default, not airtight.** The Bash scanner is regex
   over shell strings; it misses writes inside invoked scripts and `python -c`. A
@@ -80,14 +80,14 @@ Read these before trusting agentmesh with anything that matters.
   declaration — reduced, not eliminated. Untracked-but-not-ignored files are
   searched; ignored paths are not.
 - **Agents escalate rather than negotiate, by default.** In live runs a blocked
-  agent read the hint, understood that `agentmesh reply` existed, and still
+  agent read the hint, understood that `interlock reply` existed, and still
   stopped to ask its human instead. The negotiation machinery works, but do not
   expect it to be used unprompted — tell your agents in `CLAUDE.md`/`AGENTS.md`
   that replying is the expected move.
 - **No security boundary.** Every agent runs as the same OS user with write
   access to the state directory, and could forge an `accept` from another id.
   `flock` protects against concurrent corruption, not against a misbehaving
-  agent. Do not deploy agentmesh as a multi-tenant safety mechanism.
+  agent. Do not deploy interlock as a multi-tenant safety mechanism.
 - **Protection covers concurrently-live agents only.** `SessionEnd` releases an
   agent's claims, but the files it wrote stay behind. Observed twice in live
   runs: an agent finished writing docs, exited, and a later agent deleted the
@@ -98,11 +98,11 @@ Read these before trusting agentmesh with anything that matters.
   gap.
 - **Temporal overlap matters as much as file overlap, and is not modelled.**
   Two agents conflict only if they are live at the same time. Short tasks
-  finish before long ones reach them, so agentmesh does nothing — which looks
+  finish before long ones reach them, so interlock does nothing — which looks
   like success and is not. If you are evaluating it, make sure your agents
   actually overlap before concluding anything.
 - **`accept` is binary; agents answer in conditions.** A live run produced the
-  accept *"go ahead once I confirm tests pass — will ping shortly."* agentmesh
+  accept *"go ahead once I confirm tests pass — will ping shortly."* interlock
   recorded it as unconditional, opened the gate at once, and no ping ever came.
   The outcome happened to be fine. Treat a recorded agreement as "the other
   agent did not object", not as "the precondition it named was met".
@@ -118,7 +118,7 @@ Read these before trusting agentmesh with anything that matters.
 
 ## Design
 
-`docs/superpowers/specs/2026-08-28-agentmesh-design.md` carries the full design
+`docs/superpowers/specs/2026-08-28-interlock-design.md` carries the full design
 and the reasoning behind each threshold.
 
 ## License

@@ -72,7 +72,7 @@ def drain(agent_id):
 def format_for_agent(msgs):
     if not msgs:
         return ""
-    lines = ["agentmesh: messages from other agents:"]
+    lines = ["interlock: messages from other agents:"]
     for m in msgs:
         lines.append(
             f"  [{m['kind']}] from {m['from']} re {m['ref'] or '(files)'}: "
@@ -80,13 +80,13 @@ def format_for_agent(msgs):
         )
         if m["kind"] == "objection":
             lines.append(
-                f"      you are blocked, so you propose: agentmesh reply "
+                f"      you are blocked, so you propose: interlock reply "
                 f"--to {m['from']} --kind offer --ref {m['ref']} "
                 f"--msg \"<shim / migration / other approach>\""
             )
         if m["kind"] == "offer":
             lines.append(
-                f"      answer it: agentmesh reply --to {m['from']} "
+                f"      answer it: interlock reply --to {m['from']} "
                 f"--kind accept|refuse --ref {m['ref']} --msg \"<why>\""
             )
     return "\n".join(lines)
@@ -310,7 +310,7 @@ def plan_objections(agent_id, conflicts, agents):
     its own single write and send afterwards.
 
     Observed live: every blocked agent asked its human instead of running
-    `agentmesh reply`, and not one message was exchanged. Requiring two agents
+    `interlock reply`, and not one message was exchanged. Requiring two agents
     to cooperate before anything happens is where it broke.
 
     For an INTERFACE_BREAK the objection is already a fact in the code -- who

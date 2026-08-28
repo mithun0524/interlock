@@ -1,14 +1,14 @@
-# agentmesh Implementation Plan
+# interlock Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Ship a CLI + Claude Code hook set that lets 3-7 concurrent coding agents on one repo see each other's intent, detect interface-level conflicts before they land, and negotiate without a human.
 
-**Architecture:** All state is JSON under `<git-common-dir>/agentmesh/`, mutated only under `flock`. A single blocking `PreToolUse` hook is the enforcement gate; expensive conflict detection (`git grep`) runs once at `declare` time and its result is cached in the declaration, so the gate is a JSON read plus a glob match. Five modules: `state` (only module touching disk), `detect`, `negotiate`, `hooks`, `cli`.
+**Architecture:** All state is JSON under `<git-common-dir>/interlock/`, mutated only under `flock`. A single blocking `PreToolUse` hook is the enforcement gate; expensive conflict detection (`git grep`) runs once at `declare` time and its result is cached in the declaration, so the gate is a JSON read plus a glob match. Five modules: `state` (only module touching disk), `detect`, `negotiate`, `hooks`, `cli`.
 
 **Tech Stack:** Python 3.9+, standard library only (`json`, `fcntl`, `fnmatch`, `subprocess`, `argparse`, `re`, `pathlib`). `git` is the only external binary. `pytest` for tests. Apache-2.0.
 
-**Spec:** `docs/superpowers/specs/2026-08-28-agentmesh-design.md` — read it alongside this plan; the plan argues from it.
+**Spec:** `docs/superpowers/specs/2026-08-28-interlock-design.md` — read it alongside this plan; the plan argues from it.
 
 ## Global Constraints
 
@@ -33,15 +33,15 @@
 
 **Files:**
 - Create: `pyproject.toml`
-- Create: `agentmesh/__init__.py`
-- Create: `agentmesh/state.py`
+- Create: `interlock/__init__.py`
+- Create: `interlock/state.py`
 - Create: `tests/conftest.py`
 - Test: `tests/test_state.py`
 
 **Interfaces:**
 - Consumes: nothing.
 - Produces:
-  - `state.state_dir() -> pathlib.Path` — `<git-common-dir>/agentmesh`, created if absent
+  - `state.state_dir() -> pathlib.Path` — `<git-common-dir>/interlock`, created if absent
   - `state.worktree_root() -> str` — absolute path from `git rev-parse --show-toplevel`
   - `state.head_sha() -> str` — `git rev-parse HEAD`, or `""` in a repo with no commits
   - `state.locked()` — context manager holding an exclusive `flock`
@@ -102,12 +102,12 @@ def worktree(repo, tmp_path):
 import json
 import time
 
-from agentmesh import state
+from interlock import state
 
 
 def test_state_dir_is_inside_git_common_dir(repo):
     d = state.state_dir()
-    assert d == repo / ".git" / "agentmesh"
+    assert d == repo / ".git" / "interlock"
     assert d.is_dir()
 
 
@@ -173,7 +173,7 @@ def test_save_is_atomic_and_leaves_no_tmp_files(repo):
 - [ ] **Step 2: Run the tests to verify they fail**
 
 Run: `python -m pytest tests/test_state.py -v`
-Expected: FAIL — `ModuleNotFoundError: No module named 'agentmesh'`
+Expected: FAIL — `ModuleNotFoundError: No module named 'interlock'`
 
 - [ ] **Step 3: Write the implementation**
 
@@ -185,7 +185,7 @@ requires = ["setuptools>=61"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "agentmesh"
+name = "interlock"
 version = "0.1.0"
 description = "Coordination layer for concurrent AI coding agents on one repo"
 requires-python = ">=3.9"
@@ -193,27 +193,27 @@ dependencies = []
 license = { text = "Apache-2.0" }
 
 [project.scripts]
-agentmesh = "agentmesh.cli:main"
+interlock = "interlock.cli:main"
 
 [project.optional-dependencies]
 dev = ["pytest>=7"]
 
 [tool.setuptools]
-packages = ["agentmesh"]
+packages = ["interlock"]
 ```
 
-`agentmesh/__init__.py`:
+`interlock/__init__.py`:
 
 ```python
 __version__ = "0.1.0"
 ```
 
-`agentmesh/state.py`:
+`interlock/state.py`:
 
 ```python
 """The only module that touches disk.
 
-Everything else in agentmesh takes and returns plain dicts, which is what
+Everything else in interlock takes and returns plain dicts, which is what
 makes it testable without a filesystem.
 """
 
@@ -234,7 +234,7 @@ ROUND_CAP = 2
 NUDGE_AFTER_INV = 2
 ESCALATE_AFTER_INV = 4
 
-_DIRNAME = "agentmesh"
+_DIRNAME = "interlock"
 
 
 def _git(*args):
@@ -245,7 +245,7 @@ def _git(*args):
 
 
 def state_dir():
-    """<git-common-dir>/agentmesh — shared by every worktree of the repo.
+    """<git-common-dir>/interlock — shared by every worktree of the repo.
 
     git prints --git-common-dir relative to cwd when cwd is the toplevel and
     absolute otherwise, so abspath covers both without needing git >= 2.31's
@@ -253,7 +253,7 @@ def state_dir():
     """
     common = _git("rev-parse", "--git-common-dir")
     if not common:
-        raise RuntimeError("agentmesh must run inside a git repository")
+        raise RuntimeError("interlock must run inside a git repository")
     d = pathlib.Path(os.path.abspath(common)) / _DIRNAME
     (d / "inbox").mkdir(parents=True, exist_ok=True)
     return d
@@ -371,11 +371,11 @@ import json
 import subprocess
 import sys
 
-from agentmesh import state
+from interlock import state
 
 WRITER = """
 import sys
-from agentmesh import state
+from interlock import state
 state.upsert(sys.argv[1], goal="agent " + sys.argv[1])
 """
 
@@ -404,10 +404,10 @@ Expected: PASS. If it fails, the bug is in `locked()`/`save()`, not the test —
 - [ ] **Step 7: Commit**
 
 ```bash
-git add pyproject.toml agentmesh/ tests/
+git add pyproject.toml interlock/ tests/
 git commit -m "feat: locked, worktree-shared state store
 
-State lives in <git-common-dir>/agentmesh so every worktree of a repo
+State lives in <git-common-dir>/interlock so every worktree of a repo
 shares one coordination view. Upsert-by-id, atomic replace under flock,
 prune in the write path."
 ```
@@ -417,7 +417,7 @@ prune in the write path."
 ### Task 2: File-level conflict detection, split by worktree
 
 **Files:**
-- Create: `agentmesh/detect.py`
+- Create: `interlock/detect.py`
 - Test: `tests/test_detect_files.py`
 
 **Interfaces:**
@@ -436,7 +436,7 @@ prune in the write path."
 `tests/test_detect_files.py`:
 
 ```python
-from agentmesh import detect
+from interlock import detect
 
 
 def _row(**kw):
@@ -513,7 +513,7 @@ Expected: FAIL — `ImportError: cannot import name 'detect'`
 
 - [ ] **Step 3: Write the implementation**
 
-`agentmesh/detect.py`:
+`interlock/detect.py`:
 
 ```python
 """Conflict detection. Pure functions over plain dicts — no disk access."""
@@ -622,7 +622,7 @@ Expected: all 8 PASS
 - [ ] **Step 5: Commit**
 
 ```bash
-git add agentmesh/detect.py tests/test_detect_files.py
+git add interlock/detect.py tests/test_detect_files.py
 git commit -m "feat: file-level conflict detection, worktree-aware
 
 Same path in two worktrees is not a conflict; the files are separate.
@@ -634,7 +634,7 @@ Glob expansion restricted to tracked files, ** crossing separators."
 ### Task 3: Symbol references and INTERFACE_BREAK
 
 **Files:**
-- Modify: `agentmesh/detect.py`
+- Modify: `interlock/detect.py`
 - Test: `tests/test_detect_interface.py`
 
 **Interfaces:**
@@ -649,7 +649,7 @@ Glob expansion restricted to tracked files, ** crossing separators."
 `tests/test_detect_interface.py`:
 
 ```python
-from agentmesh import detect, state
+from interlock import detect, state
 
 
 def _row(**kw):
@@ -740,9 +740,9 @@ def test_own_claimed_files_are_not_conflicts(repo):
 - [ ] **Step 2: Run to verify it fails**
 
 Run: `python -m pytest tests/test_detect_interface.py -v`
-Expected: FAIL — `AttributeError: module 'agentmesh.detect' has no attribute 'refs_for_symbol'`
+Expected: FAIL — `AttributeError: module 'interlock.detect' has no attribute 'refs_for_symbol'`
 
-- [ ] **Step 3: Write the implementation — append to `agentmesh/detect.py`**
+- [ ] **Step 3: Write the implementation — append to `interlock/detect.py`**
 
 ```python
 import json
@@ -837,7 +837,7 @@ Expected: all 10 PASS
 - [ ] **Step 5: Commit**
 
 ```bash
-git add agentmesh/detect.py tests/test_detect_interface.py
+git add interlock/detect.py tests/test_detect_interface.py
 git commit -m "feat: interface-break detection via git grep
 
 Grep hits are filtered to those intersecting another live declaration, so
@@ -850,7 +850,7 @@ worktree boundaries; file conflicts do not."
 ### Task 4: Remaining rules, the short-symbol guard, and one entry point
 
 **Files:**
-- Modify: `agentmesh/detect.py`
+- Modify: `interlock/detect.py`
 - Test: `tests/test_detect_rules.py`
 
 **Interfaces:**
@@ -870,7 +870,7 @@ worktree boundaries; file conflicts do not."
 ```python
 import pytest
 
-from agentmesh import detect, state
+from interlock import detect, state
 
 
 def _row(**kw):
@@ -970,9 +970,9 @@ def test_detect_all_returns_every_class_at_once(repo):
 - [ ] **Step 2: Run to verify it fails**
 
 Run: `python -m pytest tests/test_detect_rules.py -v`
-Expected: FAIL — `AttributeError: module 'agentmesh.detect' has no attribute 'SymbolTooVague'`
+Expected: FAIL — `AttributeError: module 'interlock.detect' has no attribute 'SymbolTooVague'`
 
-- [ ] **Step 3: Write the implementation — append to `agentmesh/detect.py`**
+- [ ] **Step 3: Write the implementation — append to `interlock/detect.py`**
 
 ```python
 class SymbolTooVague(Exception):
@@ -1088,7 +1088,7 @@ Expected: all PASS (Tasks 1-4)
 - [ ] **Step 6: Commit**
 
 ```bash
-git add agentmesh/detect.py tests/test_detect_rules.py
+git add interlock/detect.py tests/test_detect_rules.py
 git commit -m "feat: add-collision, god-symbol, goal-overlap, symbol guard
 
 The short-symbol guard is ambiguity-only and never reads hit counts, so a
@@ -1101,7 +1101,7 @@ entry point declare calls."
 ### Task 5: Hook payload parsing and the Bash write-shape scanner
 
 **Files:**
-- Create: `agentmesh/hooks.py`
+- Create: `interlock/hooks.py`
 - Test: `tests/test_hooks_payload.py`
 
 **Interfaces:**
@@ -1118,7 +1118,7 @@ entry point declare calls."
 ```python
 import pytest
 
-from agentmesh import hooks
+from interlock import hooks
 
 WRITES = [
     ("cat > src/auth.py <<'EOF'\nx\nEOF", ["src/auth.py"]),
@@ -1196,7 +1196,7 @@ Expected: FAIL — `ImportError: cannot import name 'hooks'`
 
 - [ ] **Step 3: Write the implementation**
 
-`agentmesh/hooks.py`:
+`interlock/hooks.py`:
 
 ```python
 """Hook payload parsing and the gate.
@@ -1274,7 +1274,7 @@ Expected: all 20 PASS. If `mv` or `cp` groups leak a flag, tighten `_PATH` rathe
 - [ ] **Step 5: Commit**
 
 ```bash
-git add agentmesh/hooks.py tests/test_hooks_payload.py
+git add interlock/hooks.py tests/test_hooks_payload.py
 git commit -m "feat: hook payload parsing and Bash write-shape scanner
 
 Bash is matched alongside Edit/Write because sed -i and cat > file bypass
@@ -1287,7 +1287,7 @@ reads are never blocked."
 ### Task 6: The gate
 
 **Files:**
-- Modify: `agentmesh/hooks.py`
+- Modify: `interlock/hooks.py`
 - Test: `tests/test_hooks_gate.py`
 
 **Interfaces:**
@@ -1304,7 +1304,7 @@ reads are never blocked."
 ```python
 import time
 
-from agentmesh import detect, hooks, state
+from interlock import detect, hooks, state
 
 
 def _payload(sid="a3f9c1", tool="Edit", path="src/auth.py"):
@@ -1315,7 +1315,7 @@ def _payload(sid="a3f9c1", tool="Edit", path="src/auth.py"):
 def test_undeclared_agent_is_blocked_with_instructions(repo):
     code, msg = hooks.gate(_payload())
     assert code == hooks.BLOCK
-    assert "agentmesh declare" in msg
+    assert "interlock declare" in msg
 
 
 def test_declared_agent_editing_its_own_file_passes(repo):
@@ -1422,9 +1422,9 @@ def test_session_start_injects_the_roster(repo):
 - [ ] **Step 2: Run to verify it fails**
 
 Run: `python -m pytest tests/test_hooks_gate.py -v`
-Expected: FAIL — `AttributeError: module 'agentmesh.hooks' has no attribute 'gate'`
+Expected: FAIL — `AttributeError: module 'interlock.hooks' has no attribute 'gate'`
 
-- [ ] **Step 3: Write the implementation — append to `agentmesh/hooks.py`**
+- [ ] **Step 3: Write the implementation — append to `interlock/hooks.py`**
 
 ```python
 import json
@@ -1436,8 +1436,8 @@ ALLOW = 0
 BLOCK = 2
 
 _DECLARE_HINT = (
-    "agentmesh: declare your intent before editing.\n"
-    "Run: agentmesh declare --goal \"<one sentence>\" "
+    "interlock: declare your intent before editing.\n"
+    "Run: interlock declare --goal \"<one sentence>\" "
     "--globs \"<paths you will touch>\" "
     "[--removes SYM] [--sig SYM] [--deps SYM] "
     "[--progress \"<what you have produced>\"]"
@@ -1465,8 +1465,8 @@ def _roster(agents, me_id):
             line += f"\n      files: {', '.join(row['globs'])}"
         lines.append(line)
     if not lines:
-        return "agentmesh: no other agents active in this repo."
-    return "agentmesh: other agents active in this repo:\n" + "\n".join(lines)
+        return "interlock: no other agents active in this repo."
+    return "interlock: other agents active in this repo:\n" + "\n".join(lines)
 
 
 def gate(payload):
@@ -1499,28 +1499,28 @@ def gate(payload):
             if rel in detect.claimed_paths(row, root):
                 held = int(time.time() - row.get("hb", 0))
                 return BLOCK, (
-                    f"agentmesh: {rel} is claimed by agent {aid}.\n"
+                    f"interlock: {rel} is claimed by agent {aid}.\n"
                     f"  its goal: {row.get('goal', '')}\n"
                     f"  produced so far: {row.get('progress') or '(nothing yet)'}\n"
                     f"  idle for: {held}s\n"
                     f"Work on another file, or negotiate:\n"
-                    f"  agentmesh reply --to {aid} --kind objection "
+                    f"  interlock reply --to {aid} --kind objection "
                     f"--ref {rel} --msg \"<why you need it>\""
                 )
         if rel not in mine and not detect.matches_globs(
                 rel, me.get("globs", [])):
             return BLOCK, (
-                f"agentmesh: {rel} is outside your declared globs "
+                f"interlock: {rel} is outside your declared globs "
                 f"({', '.join(me.get('globs', [])) or 'none'}).\n"
                 f"Re-declare to widen your claim and re-run detection:\n"
-                f"  agentmesh declare --goal \"{me.get('goal', '')}\" "
+                f"  interlock declare --goal \"{me.get('goal', '')}\" "
                 f"--globs \"{' '.join(me.get('globs', []) + [rel])}\""
             )
     return ALLOW, ""
 
 
 def _conflict_message(conflicts, agents):
-    out = ["agentmesh: blocked by unresolved conflicts."]
+    out = ["interlock: blocked by unresolved conflicts."]
     for c in conflicts:
         other = agents.get(c.get("with"), {})
         out.append(
@@ -1532,12 +1532,12 @@ def _conflict_message(conflicts, agents):
         if c["kind"] == detect.GOD_SYMBOL:
             out.append(
                 "      repo-wide change — ask the human, then: "
-                f"agentmesh resolve --ref {c['ref']} --decision \"<verdict>\""
+                f"interlock resolve --ref {c['ref']} --decision \"<verdict>\""
             )
         else:
             out.append(
                 "      you are blocked, so you propose: "
-                f"agentmesh reply --to {c.get('with')} --kind offer "
+                f"interlock reply --to {c.get('with')} --kind offer "
                 f"--ref {c['ref']} --msg \"<shim / migration / other approach>\""
             )
     return "\n".join(out)
@@ -1589,7 +1589,7 @@ Expected: all PASS (Tasks 1-6)
 - [ ] **Step 6: Commit**
 
 ```bash
-git add agentmesh/hooks.py tests/test_hooks_gate.py
+git add interlock/hooks.py tests/test_hooks_gate.py
 git commit -m "feat: the gate
 
 Blocks on an unresolved conflict, another agent's claim, or a write
@@ -1602,8 +1602,8 @@ releases claims."
 ### Task 7: Negotiation messages and the four verbs
 
 **Files:**
-- Create: `agentmesh/negotiate.py`
-- Modify: `agentmesh/hooks.py` (wire message delivery into `PreToolUse`)
+- Create: `interlock/negotiate.py`
+- Modify: `interlock/hooks.py` (wire message delivery into `PreToolUse`)
 - Test: `tests/test_negotiate.py`
 
 **Interfaces:**
@@ -1623,7 +1623,7 @@ releases claims."
 ```python
 import pytest
 
-from agentmesh import detect, negotiate, state
+from interlock import detect, negotiate, state
 
 
 def _setup_conflict(repo):
@@ -1727,7 +1727,7 @@ Expected: FAIL — `ImportError: cannot import name 'negotiate'`
 
 - [ ] **Step 3: Write the implementation**
 
-`agentmesh/negotiate.py`:
+`interlock/negotiate.py`:
 
 ```python
 """Messages between agents.
@@ -1802,7 +1802,7 @@ def drain(agent_id):
 def format_for_agent(msgs):
     if not msgs:
         return ""
-    lines = ["agentmesh: messages from other agents:"]
+    lines = ["interlock: messages from other agents:"]
     for m in msgs:
         lines.append(
             f"  [{m['kind']}] from {m['from']} re {m['ref'] or '(files)'}: "
@@ -1810,13 +1810,13 @@ def format_for_agent(msgs):
         )
         if m["kind"] == "objection":
             lines.append(
-                f"      you are blocked, so you propose: agentmesh reply "
+                f"      you are blocked, so you propose: interlock reply "
                 f"--to {m['from']} --kind offer --ref {m['ref']} "
                 f"--msg \"<shim / migration / other approach>\""
             )
         if m["kind"] == "offer":
             lines.append(
-                f"      answer it: agentmesh reply --to {m['from']} "
+                f"      answer it: interlock reply --to {m['from']} "
                 f"--kind accept|refuse --ref {m['ref']} --msg \"<why>\""
             )
     return "\n".join(lines)
@@ -1851,7 +1851,7 @@ def apply(msg):
         state.save(data)
 ```
 
-Then in `agentmesh/hooks.py`, wire delivery into the `PreToolUse` branch:
+Then in `interlock/hooks.py`, wire delivery into the `PreToolUse` branch:
 
 ```python
 from . import detect, negotiate, state
@@ -1871,7 +1871,7 @@ Expected: all PASS
 - [ ] **Step 5: Commit**
 
 ```bash
-git add agentmesh/negotiate.py agentmesh/hooks.py tests/test_negotiate.py
+git add interlock/negotiate.py interlock/hooks.py tests/test_negotiate.py
 git commit -m "feat: negotiation messages and the four verbs
 
 Blocked agent proposes, dependent agent objects, so neither side waits.
@@ -1883,7 +1883,7 @@ An accept whose sender is the agent it would unblock is rejected."
 ### Task 8: Timers, escalation, and the deterministic fallback
 
 **Files:**
-- Modify: `agentmesh/negotiate.py`
+- Modify: `interlock/negotiate.py`
 - Test: `tests/test_negotiate_timers.py`
 
 **Interfaces:**
@@ -1904,7 +1904,7 @@ An accept whose sender is the agent it would unblock is rejected."
 ```python
 import time
 
-from agentmesh import detect, negotiate, state
+from interlock import detect, negotiate, state
 
 
 def _pair(repo, *, a_conflict=True, hb_b=None):
@@ -2048,9 +2048,9 @@ def test_the_later_declarer_yields(repo):
 - [ ] **Step 2: Run to verify it fails**
 
 Run: `python -m pytest tests/test_negotiate_timers.py -v`
-Expected: FAIL — `AttributeError: module 'agentmesh.negotiate' has no attribute 'is_absent'`
+Expected: FAIL — `AttributeError: module 'interlock.negotiate' has no attribute 'is_absent'`
 
-- [ ] **Step 3: Write the implementation — append to `agentmesh/negotiate.py`**
+- [ ] **Step 3: Write the implementation — append to `interlock/negotiate.py`**
 
 ```python
 def is_absent(row, now):
@@ -2272,7 +2272,7 @@ Expected: all PASS (Tasks 1-8)
 - [ ] **Step 7: Commit**
 
 ```bash
-git add agentmesh/negotiate.py agentmesh/state.py tests/test_negotiate_timers.py
+git add interlock/negotiate.py interlock/state.py tests/test_negotiate_timers.py
 git commit -m "feat: absent-agent, silence, and round-cap timers
 
 An absent counterparty never holds the repo hostage; the blocked agent
@@ -2285,7 +2285,7 @@ gate invocations, so a long build is not punished."
 ### Task 9: CLI — declare, status, reply, resolve, release, hook
 
 **Files:**
-- Create: `agentmesh/cli.py`
+- Create: `interlock/cli.py`
 - Test: `tests/test_cli.py`
 
 **Interfaces:**
@@ -2293,7 +2293,7 @@ gate invocations, so a long build is not punished."
 - Produces:
   - `cli.main(argv: list[str] = None) -> int` — process exit code
   - `cli.cmd_declare(args) -> int`, `cmd_status(args) -> int`, `cmd_reply(args) -> int`, `cmd_resolve(args) -> int`, `cmd_release(args) -> int`, `cmd_hook(args) -> int`
-  - `cli.resolve_agent_id(explicit: str = None) -> str` — `--id`, else `$CLAUDE_SESSION_ID[:6]`, else `$AGENTMESH_ID`, else the single active agent in this worktree, else error
+  - `cli.resolve_agent_id(explicit: str = None) -> str` — `--id`, else `$CLAUDE_SESSION_ID[:6]`, else `$INTERLOCK_ID`, else the single active agent in this worktree, else error
 
 - [ ] **Step 1: Write the failing test**
 
@@ -2302,7 +2302,7 @@ gate invocations, so a long build is not punished."
 ```python
 import json
 
-from agentmesh import cli, negotiate, state
+from interlock import cli, negotiate, state
 
 
 def _run(*argv, env=None, monkeypatch=None):
@@ -2313,7 +2313,7 @@ def _run(*argv, env=None, monkeypatch=None):
 
 
 def test_declare_creates_a_row(repo, monkeypatch):
-    monkeypatch.setenv("AGENTMESH_ID", "a3f9c1")
+    monkeypatch.setenv("INTERLOCK_ID", "a3f9c1")
     assert _run("declare", "--goal", "jwt migration",
                 "--globs", "src/auth.py") == 0
     row = state.get_all()["a3f9c1"]
@@ -2323,7 +2323,7 @@ def test_declare_creates_a_row(repo, monkeypatch):
 
 
 def test_declare_accepts_multiple_globs_and_deltas(repo, monkeypatch):
-    monkeypatch.setenv("AGENTMESH_ID", "a3f9c1")
+    monkeypatch.setenv("INTERLOCK_ID", "a3f9c1")
     _run("declare", "--goal", "g", "--globs", "src/**", "docs/**",
          "--removes", "getUserFromSession", "--adds", "verifyJwt",
          "--deps", "createSession", "--progress", "half done")
@@ -2336,7 +2336,7 @@ def test_declare_accepts_multiple_globs_and_deltas(repo, monkeypatch):
 
 
 def test_declare_is_idempotent_and_recomputes_conflicts(repo, monkeypatch):
-    monkeypatch.setenv("AGENTMESH_ID", "a3f9c1")
+    monkeypatch.setenv("INTERLOCK_ID", "a3f9c1")
     state.upsert("b7d2e0", goal="pagination", globs=["src/api.py"],
                  worktree=state.worktree_root())
     _run("declare", "--goal", "g", "--globs", "src/auth.py",
@@ -2350,7 +2350,7 @@ def test_declare_is_idempotent_and_recomputes_conflicts(repo, monkeypatch):
 
 def test_declare_rejects_a_vague_symbol_with_a_useful_message(repo, capsys,
                                                               monkeypatch):
-    monkeypatch.setenv("AGENTMESH_ID", "a3f9c1")
+    monkeypatch.setenv("INTERLOCK_ID", "a3f9c1")
     rc = _run("declare", "--goal", "g", "--globs", "src/**",
               "--removes", "get")
     assert rc == 1
@@ -2358,7 +2358,7 @@ def test_declare_rejects_a_vague_symbol_with_a_useful_message(repo, capsys,
 
 
 def test_declare_reports_conflicts_on_stdout(repo, capsys, monkeypatch):
-    monkeypatch.setenv("AGENTMESH_ID", "a3f9c1")
+    monkeypatch.setenv("INTERLOCK_ID", "a3f9c1")
     state.upsert("b7d2e0", goal="pagination", globs=["src/api.py"],
                  worktree=state.worktree_root())
     _run("declare", "--goal", "g", "--globs", "src/auth.py",
@@ -2383,7 +2383,7 @@ def test_status_json_is_machine_readable(repo, capsys, monkeypatch):
 
 
 def test_reply_delivers_a_message(repo, monkeypatch):
-    monkeypatch.setenv("AGENTMESH_ID", "a3f9c1")
+    monkeypatch.setenv("INTERLOCK_ID", "a3f9c1")
     wt = state.worktree_root()
     state.upsert("a3f9c1", goal="a", worktree=wt)
     state.upsert("b7d2e0", goal="b", worktree=wt)
@@ -2393,7 +2393,7 @@ def test_reply_delivers_a_message(repo, monkeypatch):
 
 
 def test_reply_rejects_an_unknown_recipient(repo, capsys, monkeypatch):
-    monkeypatch.setenv("AGENTMESH_ID", "a3f9c1")
+    monkeypatch.setenv("INTERLOCK_ID", "a3f9c1")
     state.upsert("a3f9c1", goal="a", worktree=state.worktree_root())
     rc = _run("reply", "--to", "nobody", "--kind", "offer", "--ref", "x",
               "--msg", "m")
@@ -2402,7 +2402,7 @@ def test_reply_rejects_an_unknown_recipient(repo, capsys, monkeypatch):
 
 
 def test_resolve_records_the_human_verdict(repo, monkeypatch):
-    from agentmesh import detect
+    from interlock import detect
     c = detect.conflict(detect.INTERFACE_BREAK, "getUserFromSession",
                         "b7d2e0", "d")
     state.upsert("a3f9c1", goal="a", conflicts=[c],
@@ -2415,7 +2415,7 @@ def test_resolve_records_the_human_verdict(repo, monkeypatch):
 
 
 def test_release_marks_the_agent_done(repo, monkeypatch):
-    monkeypatch.setenv("AGENTMESH_ID", "a3f9c1")
+    monkeypatch.setenv("INTERLOCK_ID", "a3f9c1")
     state.upsert("a3f9c1", goal="a", worktree=state.worktree_root())
     assert _run("release") == 0
     assert "a3f9c1" not in state.get_all()
@@ -2428,7 +2428,7 @@ def test_hook_blocks_an_undeclared_write(repo, capsys):
     sys.stdin = io.StringIO(payload)
     rc = _run("hook", "--event", "PreToolUse")
     assert rc == 2
-    assert "agentmesh declare" in capsys.readouterr().err
+    assert "interlock declare" in capsys.readouterr().err
 
 
 def test_hook_emits_additional_context_json_on_allow(repo, capsys):
@@ -2449,13 +2449,13 @@ def test_hook_emits_additional_context_json_on_allow(repo, capsys):
 
 
 def test_resolve_agent_id_prefers_explicit_over_env(repo, monkeypatch):
-    monkeypatch.setenv("AGENTMESH_ID", "fromenv")
+    monkeypatch.setenv("INTERLOCK_ID", "fromenv")
     assert cli.resolve_agent_id("abc123") == "abc123"
 
 
 def test_resolve_agent_id_falls_back_to_the_only_active_agent(repo,
                                                               monkeypatch):
-    monkeypatch.delenv("AGENTMESH_ID", raising=False)
+    monkeypatch.delenv("INTERLOCK_ID", raising=False)
     monkeypatch.delenv("CLAUDE_SESSION_ID", raising=False)
     state.upsert("solo01", goal="g", worktree=state.worktree_root())
     assert cli.resolve_agent_id() == "solo01"
@@ -2468,10 +2468,10 @@ Expected: FAIL — `ImportError: cannot import name 'cli'`
 
 - [ ] **Step 3: Write the implementation**
 
-`agentmesh/cli.py`:
+`interlock/cli.py`:
 
 ```python
-"""One binary, two faces: `agentmesh hook` for hooks, the rest for agents
+"""One binary, two faces: `interlock hook` for hooks, the rest for agents
 and humans."""
 
 import argparse
@@ -2488,7 +2488,7 @@ def resolve_agent_id(explicit=None):
     sid = os.environ.get("CLAUDE_SESSION_ID")
     if sid:
         return sid[:6]
-    env = os.environ.get("AGENTMESH_ID")
+    env = os.environ.get("INTERLOCK_ID")
     if env:
         return env
     here = state.worktree_root()
@@ -2497,17 +2497,17 @@ def resolve_agent_id(explicit=None):
     if len(mine) == 1:
         return mine[0]
     raise SystemExit(
-        "agentmesh: cannot tell which agent you are. Pass --id, or set "
-        "AGENTMESH_ID."
+        "interlock: cannot tell which agent you are. Pass --id, or set "
+        "INTERLOCK_ID."
     )
 
 
 def _print_conflicts(conflicts):
     if not conflicts:
-        print("agentmesh: declared, no conflicts.")
+        print("interlock: declared, no conflicts.")
         return
     blocking = [c for c in conflicts if c.get("status") != "resolved"]
-    print(f"agentmesh: declared, {len(conflicts)} conflict(s) "
+    print(f"interlock: declared, {len(conflicts)} conflict(s) "
           f"({len(blocking)} blocking):")
     for c in conflicts:
         flag = " (advisory)" if c.get("status") == "resolved" else ""
@@ -2523,7 +2523,7 @@ def cmd_declare(args):
     try:
         detect.validate_symbols(deltas, args.deps)
     except detect.SymbolTooVague as e:
-        print(f"agentmesh: {e}", file=sys.stderr)
+        print(f"interlock: {e}", file=sys.stderr)
         return 1
 
     fields = {
@@ -2560,9 +2560,9 @@ def cmd_status(args):
                           "escalations": negotiate.escalations()}, indent=2))
         return 0
     if not agents:
-        print("agentmesh: no active agents.")
+        print("interlock: no active agents.")
         return 0
-    print(f"agentmesh: {len(agents)} active agent(s)")
+    print(f"interlock: {len(agents)} active agent(s)")
     for aid, row in sorted(agents.items()):
         print(f"\n  {aid}  {row.get('goal', '')}")
         print(f"    worktree: {row.get('worktree', '')}")
@@ -2579,7 +2579,7 @@ def cmd_status(args):
         for c in esc:
             print(f"  {c['ref']}: {c['detail']}")
             print(f"    agent {c['agent']} vs {c.get('with') or '(repo)'}")
-            print(f"    agentmesh resolve --ref {c['ref']} "
+            print(f"    interlock resolve --ref {c['ref']} "
                   f"--decision \"<verdict>\"")
     return 0
 
@@ -2587,22 +2587,22 @@ def cmd_status(args):
 def cmd_reply(args):
     agent_id = resolve_agent_id(args.id)
     if args.to not in state.get_all():
-        print(f"agentmesh: no active agent {args.to!r}. "
-              f"Run `agentmesh status` to see who is here.", file=sys.stderr)
+        print(f"interlock: no active agent {args.to!r}. "
+              f"Run `interlock status` to see who is here.", file=sys.stderr)
         return 1
     msg = negotiate.send(agent_id, args.to, args.kind, args.ref, args.msg)
     try:
         negotiate.apply(msg)
     except negotiate.ForgedAccept as e:
-        print(f"agentmesh: {e}", file=sys.stderr)
+        print(f"interlock: {e}", file=sys.stderr)
         return 1
-    print(f"agentmesh: {args.kind} sent to {args.to} re {args.ref}")
+    print(f"interlock: {args.kind} sent to {args.to} re {args.ref}")
     return 0
 
 
 def cmd_resolve(args):
     n = negotiate.resolve(args.ref, args.decision)
-    print(f"agentmesh: verdict recorded on {args.ref}, "
+    print(f"interlock: verdict recorded on {args.ref}, "
           f"{n} conflict(s) resolved.")
     return 0
 
@@ -2610,7 +2610,7 @@ def cmd_resolve(args):
 def cmd_release(args):
     agent_id = resolve_agent_id(args.id)
     state.upsert(agent_id, state="done")
-    print(f"agentmesh: {agent_id} released its claims.")
+    print(f"interlock: {agent_id} released its claims.")
     return 0
 
 
@@ -2631,7 +2631,7 @@ def cmd_hook(args):
 
 
 def build_parser():
-    p = argparse.ArgumentParser(prog="agentmesh")
+    p = argparse.ArgumentParser(prog="interlock")
     p.add_argument("--id", help="agent id (default: session id prefix)")
     sub = p.add_subparsers(dest="cmd", required=True)
 
@@ -2686,7 +2686,7 @@ Expected: all 15 PASS
 - [ ] **Step 5: Commit**
 
 ```bash
-git add agentmesh/cli.py tests/test_cli.py
+git add interlock/cli.py tests/test_cli.py
 git commit -m "feat: CLI for declare, status, reply, resolve, release, hook
 
 declare is idempotent and preserves negotiation state across re-runs, so
@@ -2695,11 +2695,11 @@ an agent can widen its claim without losing an in-flight agreement."
 
 ---
 
-### Task 10: `agentmesh init`
+### Task 10: `interlock init`
 
 **Files:**
-- Modify: `agentmesh/cli.py`
-- Create: `agentmesh/install.py`
+- Modify: `interlock/cli.py`
+- Create: `interlock/install.py`
 - Test: `tests/test_install.py`
 
 **Interfaces:**
@@ -2708,7 +2708,7 @@ an agent can widen its claim without losing an in-flight agreement."
   - `install.HOOK_EVENTS = ("SessionStart", "PreToolUse", "PostToolUse", "SessionEnd")`
   - `install.MATCHER = "Edit|Write|NotebookEdit|Bash"`
   - `install.hook_config() -> dict` — the `hooks` block to merge
-  - `install.merge(existing: dict) -> dict` — idempotent merge; never duplicates an agentmesh entry, never drops a foreign one
+  - `install.merge(existing: dict) -> dict` — idempotent merge; never duplicates an interlock entry, never drops a foreign one
   - `install.install(root: str, local: bool = False) -> str` — writes the settings file, returns its path
 
 - [ ] **Step 1: Write the failing test**
@@ -2718,7 +2718,7 @@ an agent can widen its claim without losing an in-flight agreement."
 ```python
 import json
 
-from agentmesh import install
+from interlock import install
 
 
 def test_hook_config_registers_exactly_four_events():
@@ -2769,7 +2769,7 @@ def test_install_preserves_unrelated_hooks(repo):
     cmds = [h["command"] for e in data["hooks"]["PreToolUse"]
             for h in e["hooks"]]
     assert "my-own-linter" in cmds
-    assert any("agentmesh" in c for c in cmds)
+    assert any("interlock" in c for c in cmds)
     assert data["permissions"]["allow"] == ["Bash(ls:*)"]
 
 
@@ -2786,10 +2786,10 @@ Expected: FAIL — `ImportError: cannot import name 'install'`
 
 - [ ] **Step 3: Write the implementation**
 
-`agentmesh/install.py`:
+`interlock/install.py`:
 
 ```python
-"""`agentmesh init` — the entire onboarding.
+"""`interlock init` — the entire onboarding.
 
 No .gitignore edit is needed: state lives inside .git, which is never
 tracked.
@@ -2801,11 +2801,11 @@ import pathlib
 
 HOOK_EVENTS = ("SessionStart", "PreToolUse", "PostToolUse", "SessionEnd")
 MATCHER = "Edit|Write|NotebookEdit|Bash"
-_MARK = "agentmesh hook"
+_MARK = "interlock hook"
 
 
 def _command(event):
-    return f"agentmesh hook --event {event}"
+    return f"interlock hook --event {event}"
 
 
 def hook_config():
@@ -2849,7 +2849,7 @@ def install(root, local=False):
     return str(p)
 ```
 
-Then in `agentmesh/cli.py`, add the `init` subcommand:
+Then in `interlock/cli.py`, add the `init` subcommand:
 
 ```python
 from . import detect, hooks, install, negotiate, state
@@ -2858,7 +2858,7 @@ from . import detect, hooks, install, negotiate, state
 def cmd_init(args):
     path = install.install(state.worktree_root(), local=args.local)
     scope = "this developer only" if args.local else "everyone who clones"
-    print(f"agentmesh: hooks installed in {path} ({scope}).")
+    print(f"interlock: hooks installed in {path} ({scope}).")
     print("Agents in this repo will now be asked to declare before editing.")
     return 0
 ```
@@ -2880,10 +2880,10 @@ Expected: all 8 PASS
 - [ ] **Step 5: Commit**
 
 ```bash
-git add agentmesh/install.py agentmesh/cli.py tests/test_install.py
-git commit -m "feat: agentmesh init installs the hooks
+git add interlock/install.py interlock/cli.py tests/test_install.py
+git commit -m "feat: interlock init installs the hooks
 
-Idempotent merge that never duplicates an agentmesh entry and never drops
+Idempotent merge that never duplicates an interlock entry and never drops
 a foreign one. --local writes settings.local.json for opt-in per developer."
 ```
 
@@ -2907,7 +2907,7 @@ a foreign one. --local writes settings.local.json for opt-in per developer."
 
 import json
 
-from agentmesh import cli, hooks, negotiate, state
+from interlock import cli, hooks, negotiate, state
 
 
 def _declare(agent_id, **kw):
@@ -3079,13 +3079,13 @@ head -3 LICENSE   # expect: "                                 Apache License"
 
 1. One-sentence pitch: coordination for 3-7 AI coding agents on one repo.
 2. **The problem**, in the spec's terms: file collisions are the symptom; the expensive failure is Agent A removing what Agent B depends on, where both sessions look successful and the repo is broken.
-3. **Install**: `pip install agentmesh` then `agentmesh init` (add `--local` to install for yourself only rather than everyone who clones).
+3. **Install**: `pip install interlock` then `interlock init` (add `--local` to install for yourself only rather than everyone who clones).
 4. **How it works**, four bullets: agents declare intent, a blocking `PreToolUse` hook is the gate, `git grep` finds who depends on what, agents negotiate and only deadlocks reach you.
-5. **Worktrees**: state lives in `<git-common-dir>/agentmesh`, so agents in separate worktrees coordinate automatically. Files are isolated per worktree; interfaces are not.
+5. **Worktrees**: state lives in `<git-common-dir>/interlock`, so agents in separate worktrees coordinate automatically. Files are isolated per worktree; interfaces are not.
 6. A **Limitations** section, stated plainly — these are the spec's known ceilings and must not be softened:
    - Enforcement is strong-by-default, not airtight. The Bash scanner is regex over shell strings and misses writes inside invoked scripts and `python -c`. A determined agent can route around the gate; the degraded mode is advisory.
    - Reference detection is `git grep` with word boundaries, not an AST. False positives are suppressed by requiring an intersection with another live declaration, not eliminated.
-   - **No security boundary.** Every agent runs as the same OS user with write access to the state directory, and could forge an `accept` from another id. `flock` protects against concurrent corruption, not against a misbehaving agent. Do not deploy agentmesh as a multi-tenant safety mechanism.
+   - **No security boundary.** Every agent runs as the same OS user with write access to the state directory, and could forge an `accept` from another id. `flock` protects against concurrent corruption, not against a misbehaving agent. Do not deploy interlock as a multi-tenant safety mechanism.
    - Symbol-level co-editing of one file is out of scope; claims are file-granular.
    - Duplicate-work detection is a heuristic warning, never a block.
 7. **Commands**: the seven-line CLI block from the spec.
@@ -3096,9 +3096,9 @@ head -3 LICENSE   # expect: "                                 Apache License"
 ```bash
 cd "$(mktemp -d)" && git init -q && echo "x" > a.py && git add -A \
   && git -c user.email=t@e.com -c user.name=T commit -qm init \
-  && agentmesh init \
-  && agentmesh declare --goal "smoke test" --globs "a.py" \
-  && agentmesh status
+  && interlock init \
+  && interlock declare --goal "smoke test" --globs "a.py" \
+  && interlock status
 ```
 
 Expected: `init` reports the settings path, `declare` reports no conflicts, `status` lists one agent.

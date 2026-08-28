@@ -1,6 +1,6 @@
 """Three agents, one repo, driven through real hook payloads."""
 
-from agentmesh import cli, hooks, negotiate, state
+from interlock import cli, hooks, negotiate, state
 
 
 def _declare(agent_id, **kw):
@@ -59,8 +59,8 @@ def test_full_remove_objection_accept_cycle(repo):
     # A is still blocked, and the block names one command, not a menu.
     code, _, err = _write("aaaaaa", "src/auth.py")
     assert code == hooks.BLOCK
-    assert "Next step: agentmesh reply" in err
-    assert err.count("agentmesh reply") == 1
+    assert "Next step: interlock reply" in err
+    assert err.count("interlock reply") == 1
 
     # A proposes a shim.
     assert cli.main(["--id", "aaaaaa", "reply", "--to", "bbbbbb",

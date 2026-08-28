@@ -1,6 +1,6 @@
 import json
 
-from agentmesh import cli, negotiate, state
+from interlock import cli, negotiate, state
 
 
 def _run(*argv):
@@ -8,7 +8,7 @@ def _run(*argv):
 
 
 def test_declare_creates_a_row(repo, monkeypatch):
-    monkeypatch.setenv("AGENTMESH_ID", "a3f9c1")
+    monkeypatch.setenv("INTERLOCK_ID", "a3f9c1")
     assert _run("declare", "--goal", "jwt migration",
                 "--globs", "src/auth.py") == 0
     row = state.get_all()["a3f9c1"]
@@ -18,7 +18,7 @@ def test_declare_creates_a_row(repo, monkeypatch):
 
 
 def test_declare_accepts_multiple_globs_and_deltas(repo, monkeypatch):
-    monkeypatch.setenv("AGENTMESH_ID", "a3f9c1")
+    monkeypatch.setenv("INTERLOCK_ID", "a3f9c1")
     _run("declare", "--goal", "g", "--globs", "src/**", "docs/**",
          "--removes", "getUserFromSession", "--adds", "verifyJwt",
          "--deps", "createSession", "--progress", "half done")
@@ -31,7 +31,7 @@ def test_declare_accepts_multiple_globs_and_deltas(repo, monkeypatch):
 
 
 def test_declare_is_idempotent_and_recomputes_conflicts(repo, monkeypatch):
-    monkeypatch.setenv("AGENTMESH_ID", "a3f9c1")
+    monkeypatch.setenv("INTERLOCK_ID", "a3f9c1")
     state.upsert("b7d2e0", goal="pagination", globs=["src/api.py"],
                  worktree=state.worktree_root())
     _run("declare", "--goal", "g", "--globs", "src/auth.py",
@@ -45,7 +45,7 @@ def test_declare_is_idempotent_and_recomputes_conflicts(repo, monkeypatch):
 
 def test_declare_rejects_a_vague_symbol_with_a_useful_message(repo, capsys,
                                                               monkeypatch):
-    monkeypatch.setenv("AGENTMESH_ID", "a3f9c1")
+    monkeypatch.setenv("INTERLOCK_ID", "a3f9c1")
     rc = _run("declare", "--goal", "g", "--globs", "src/**",
               "--removes", "get")
     assert rc == 1
@@ -53,7 +53,7 @@ def test_declare_rejects_a_vague_symbol_with_a_useful_message(repo, capsys,
 
 
 def test_declare_reports_conflicts_on_stdout(repo, capsys, monkeypatch):
-    monkeypatch.setenv("AGENTMESH_ID", "a3f9c1")
+    monkeypatch.setenv("INTERLOCK_ID", "a3f9c1")
     state.upsert("b7d2e0", goal="pagination", globs=["src/api.py"],
                  worktree=state.worktree_root())
     _run("declare", "--goal", "g", "--globs", "src/auth.py",
@@ -78,7 +78,7 @@ def test_status_json_is_machine_readable(repo, capsys):
 
 
 def test_reply_delivers_a_message(repo, monkeypatch):
-    monkeypatch.setenv("AGENTMESH_ID", "a3f9c1")
+    monkeypatch.setenv("INTERLOCK_ID", "a3f9c1")
     wt = state.worktree_root()
     state.upsert("a3f9c1", goal="a", worktree=wt)
     state.upsert("b7d2e0", goal="b", worktree=wt)
@@ -88,7 +88,7 @@ def test_reply_delivers_a_message(repo, monkeypatch):
 
 
 def test_reply_rejects_an_unknown_recipient(repo, capsys, monkeypatch):
-    monkeypatch.setenv("AGENTMESH_ID", "a3f9c1")
+    monkeypatch.setenv("INTERLOCK_ID", "a3f9c1")
     state.upsert("a3f9c1", goal="a", worktree=state.worktree_root())
     rc = _run("reply", "--to", "nobody", "--kind", "offer", "--ref", "x",
               "--msg", "m")
@@ -101,7 +101,7 @@ def test_resolve_records_the_human_verdict(repo, monkeypatch):
     # suite inherits from the harness it runs under
     for var in ("CLAUDECODE", "CLAUDE_CODE_SESSION_ID", "CLAUDE_SESSION_ID"):
         monkeypatch.delenv(var, raising=False)
-    from agentmesh import detect
+    from interlock import detect
     c = detect.conflict(detect.INTERFACE_BREAK, "getUserFromSession",
                         "b7d2e0", "d")
     state.upsert("a3f9c1", goal="a", conflicts=[c],
@@ -114,7 +114,7 @@ def test_resolve_records_the_human_verdict(repo, monkeypatch):
 
 
 def test_release_marks_the_agent_done(repo, monkeypatch):
-    monkeypatch.setenv("AGENTMESH_ID", "a3f9c1")
+    monkeypatch.setenv("INTERLOCK_ID", "a3f9c1")
     state.upsert("a3f9c1", goal="a", worktree=state.worktree_root())
     assert _run("release") == 0
     assert "a3f9c1" not in state.get_all()
@@ -127,7 +127,7 @@ def test_hook_blocks_an_undeclared_write(repo, capsys, monkeypatch):
     monkeypatch.setattr("sys.stdin", io.StringIO(payload))
     rc = _run("hook", "--event", "PreToolUse")
     assert rc == 2
-    assert "agentmesh declare" in capsys.readouterr().err
+    assert "interlock declare" in capsys.readouterr().err
 
 
 def test_hook_emits_additional_context_json_on_allow(repo, capsys,
@@ -149,13 +149,13 @@ def test_hook_emits_additional_context_json_on_allow(repo, capsys,
 
 
 def test_resolve_agent_id_prefers_explicit_over_env(repo, monkeypatch):
-    monkeypatch.setenv("AGENTMESH_ID", "fromenv")
+    monkeypatch.setenv("INTERLOCK_ID", "fromenv")
     assert cli.resolve_agent_id("abc123") == "abc123"
 
 
 def test_resolve_agent_id_falls_back_to_the_only_active_agent(repo,
                                                               monkeypatch):
-    monkeypatch.delenv("AGENTMESH_ID", raising=False)
+    monkeypatch.delenv("INTERLOCK_ID", raising=False)
     monkeypatch.delenv("CLAUDE_SESSION_ID", raising=False)
     monkeypatch.delenv("CLAUDE_CODE_SESSION_ID", raising=False)
     state.upsert("solo01", goal="g", worktree=state.worktree_root())
@@ -166,7 +166,7 @@ def test_resolve_agent_id_reads_the_env_var_claude_code_actually_exports(
         repo, monkeypatch):
     """Regression: the code originally looked for CLAUDE_SESSION_ID, which
     Claude Code does not export. The real name is CLAUDE_CODE_SESSION_ID."""
-    monkeypatch.delenv("AGENTMESH_ID", raising=False)
+    monkeypatch.delenv("INTERLOCK_ID", raising=False)
     monkeypatch.delenv("CLAUDE_SESSION_ID", raising=False)
     monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "a3f9c1de-dead-beef")
     assert cli.resolve_agent_id() == "a3f9c1"
@@ -179,7 +179,7 @@ def test_declare_writes_state_exactly_once(repo, monkeypatch):
     writes the declaration was live advertising no conflicts, so another
     agent's gate could read it and sail through.
     """
-    monkeypatch.setenv("AGENTMESH_ID", "a3f9c1")
+    monkeypatch.setenv("INTERLOCK_ID", "a3f9c1")
     state.upsert("b7d2e0", goal="pagination", globs=["src/api.py"],
                  worktree=state.worktree_root())
 

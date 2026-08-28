@@ -1,8 +1,9 @@
-# agentmesh — Design
+# interlock — Design
 
 **Date:** 2026-08-28
-**Status:** Approved design, pre-implementation
-**Working name:** `agentmesh` (placeholder, rename before first release)
+**Status:** Implemented; amended by findings from live multi-agent runs
+**Name:** `interlock` — after railway interlocking, which prevents
+conflicting routes being set at the same time.
 
 ## Problem
 
@@ -55,11 +56,11 @@ adapter; MCP and git adapters follow without a rewrite.
 
 ### Where state lives
 
-State lives at `$(git rev-parse --git-common-dir)/agentmesh/` — inside `.git`,
+State lives at `$(git rev-parse --git-common-dir)/interlock/` — inside `.git`,
 not at the working-tree root:
 
 ```
-<git-common-dir>/agentmesh/
+<git-common-dir>/interlock/
   declarations.json     # every live agent, upserted by id
   inbox/<id>.jsonl      # pending messages, drained on read
   refcache.json         # symbol -> reference paths, keyed by HEAD sha
@@ -191,7 +192,7 @@ read/modify/write beats SQLite.
 
 ## Hook Lifecycle
 
-One binary, two faces: `agentmesh hook` (invoked by hooks, reads JSON on stdin)
+One binary, two faces: `interlock hook` (invoked by hooks, reads JSON on stdin)
 and the human/agent-facing subcommands.
 
 | Hook | Matcher | Job | Blocking |
@@ -224,7 +225,7 @@ quo. This must be stated in the README.
 ### Path through the gate
 
 1. **No declaration** → exit 2. stderr instructs the agent to run
-   `agentmesh declare --id <its own id>`. **The id must come from the payload**:
+   `interlock declare --id <its own id>`. **The id must come from the payload**:
    the CLI cannot discover the session id on its own, and an agent left to guess
    invents a name the gate then never matches — blocking it forever while it
    believes it has declared. Observed live before the fix.
@@ -371,10 +372,10 @@ that is idle, crashed, or whose human left. Two independent timers:
 ### Escalation
 
 A `DECISION NEEDED` block naming both goals, the symbol, and each side's
-position. Also surfaced by `agentmesh status`. The human answers:
+position. Also surfaced by `interlock status`. The human answers:
 
 ```
-agentmesh resolve --ref getUserFromSession \
+interlock resolve --ref getUserFromSession \
   --decision "keep a deprecated shim for one release"
 ```
 
@@ -399,7 +400,7 @@ here and the design does not pretend to one: `flock` protects against
 concurrent corruption, not against a misbehaving agent.
 
 Real isolation would require per-agent credentials and a daemon owning the
-state. This must be stated in the README so nobody deploys `agentmesh` as a
+state. This must be stated in the README so nobody deploys `interlock` as a
 multi-tenant safety mechanism.
 
 ## Packaging
@@ -416,14 +417,14 @@ tracked files, and is fast enough. `rg` is used opportunistically when found on
 ### CLI
 
 ```
-agentmesh init                 # write hook config into .claude/settings*.json
-agentmesh declare --goal ... --globs ... [--removes S] [--sig S] [--deps S]
+interlock init                 # write hook config into .claude/settings*.json
+interlock declare --goal ... --globs ... [--removes S] [--sig S] [--deps S]
                   [--progress "what I have produced so far"]
-agentmesh status               # roster, conflicts, pending decisions
-agentmesh reply --to ID --kind offer|accept|refuse --ref S --msg ...
-agentmesh resolve --ref S --decision ...
-agentmesh release              # drop claims, state: done
-agentmesh hook                 # internal; reads hook JSON on stdin
+interlock status               # roster, conflicts, pending decisions
+interlock reply --to ID --kind offer|accept|refuse --ref S --msg ...
+interlock resolve --ref S --decision ...
+interlock release              # drop claims, state: done
+interlock hook                 # internal; reads hook JSON on stdin
 ```
 
 `init` is the entire onboarding: it patches the project's
@@ -436,7 +437,7 @@ sessions by hand.
 ### Layout
 
 ```
-agentmesh/
+interlock/
   cli.py        # arg parsing, command dispatch
   state.py      # flock'd read/write, upsert, prune
   detect.py     # the 5 conflict classes

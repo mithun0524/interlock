@@ -99,8 +99,8 @@ def declare_hint(me_id=""):
     """
     ident = f"--id {me_id} " if me_id else ""
     return (
-        "agentmesh: declare your intent before editing.\n"
-        f"Run: agentmesh declare {ident}--goal \"<one sentence>\" "
+        "interlock: declare your intent before editing.\n"
+        f"Run: interlock declare {ident}--goal \"<one sentence>\" "
         "--globs \"<paths you will touch>\" "
         "[--removes SYM] [--sig SYM] [--deps SYM] "
         "[--progress \"<what you have produced>\"]"
@@ -128,8 +128,8 @@ def _roster(agents, me_id):
             line += f"\n      files: {', '.join(row['globs'])}"
         lines.append(line)
     if not lines:
-        return "agentmesh: no other agents active in this repo."
-    return "agentmesh: other agents active in this repo:\n" + "\n".join(lines)
+        return "interlock: no other agents active in this repo."
+    return "interlock: other agents active in this repo:\n" + "\n".join(lines)
 
 
 def _conflict_message(conflicts, agents):
@@ -140,7 +140,7 @@ def _conflict_message(conflicts, agents):
     nothing was ever negotiated. State the situation, then give exactly one
     command to run.
     """
-    out = ["agentmesh: blocked."]
+    out = ["interlock: blocked."]
     for c in conflicts:
         other = agents.get(c.get("with"), {})
         out.append(
@@ -156,13 +156,13 @@ def _conflict_message(conflicts, agents):
     lead = conflicts[0]
     if lead["kind"] == detect.GOD_SYMBOL:
         out.append(
-            f"Next step: agentmesh resolve --ref {lead['ref']} "
+            f"Next step: interlock resolve --ref {lead['ref']} "
             f"--decision \"<verdict>\"   "
             f"(repo-wide change; this one needs a human verdict)"
         )
     else:
         out.append(
-            f"Next step: agentmesh reply --to {lead.get('with')} "
+            f"Next step: interlock reply --to {lead.get('with')} "
             f"--kind offer --ref {lead['ref']} "
             f"--msg \"<a shim, a migration, or a different approach>\""
         )
@@ -203,11 +203,11 @@ def gate(payload):
             if rel in detect.claimed_paths(row, root):
                 held = int(time.time() - row.get("hb", 0))
                 return BLOCK, (
-                    f"agentmesh: {rel} is claimed by agent {aid}.\n"
+                    f"interlock: {rel} is claimed by agent {aid}.\n"
                     f"  its goal: {row.get('goal', '')}\n"
                     f"  produced so far: {row.get('progress') or '(nothing yet)'}\n"
                     f"  idle for: {held}s\n"
-                    f"Next step: agentmesh reply --to {aid} "
+                    f"Next step: interlock reply --to {aid} "
                     f"--kind objection --ref {rel} "
                     f"--msg \"<why you need this file>\"\n"
                     f"Or work on a different file. Either way the move is "
@@ -216,10 +216,10 @@ def gate(payload):
         if rel not in mine and not detect.matches_globs(
                 rel, me.get("globs", [])):
             return BLOCK, (
-                f"agentmesh: {rel} is outside your declared globs "
+                f"interlock: {rel} is outside your declared globs "
                 f"({', '.join(me.get('globs', [])) or 'none'}).\n"
                 f"Re-declare to widen your claim and re-run detection:\n"
-                f"  agentmesh declare --id {me_id} "
+                f"  interlock declare --id {me_id} "
                 f"--goal \"{me.get('goal', '')}\" "
                 f"--globs \"{' '.join(me.get('globs', []) + [rel])}\""
             )

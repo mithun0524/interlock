@@ -1,6 +1,6 @@
 import time
 
-from agentmesh import detect, negotiate, state
+from interlock import detect, negotiate, state
 
 
 def _pair(repo, *, a_conflict=True, hb_b=None):

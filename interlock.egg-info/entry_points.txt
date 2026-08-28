@@ -1,0 +1,2 @@
+[console_scripts]
+interlock = interlock.cli:main

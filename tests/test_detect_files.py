@@ -1,4 +1,4 @@
-from agentmesh import detect
+from interlock import detect
 
 
 def _row(**kw):

@@ -1,4 +1,4 @@
-"""`agentmesh init` — the entire onboarding.
+"""`interlock init` — the entire onboarding.
 
 No .gitignore edit is needed: state lives inside .git, which is never
 tracked.
@@ -10,11 +10,11 @@ import pathlib
 
 HOOK_EVENTS = ("SessionStart", "PreToolUse", "PostToolUse", "SessionEnd")
 MATCHER = "Edit|Write|NotebookEdit|Bash"
-_MARK = "agentmesh hook"
+_MARK = "interlock hook"
 
 
 def _command(event):
-    return f"agentmesh hook --event {event}"
+    return f"interlock hook --event {event}"
 
 
 def hook_config():

@@ -1,6 +1,6 @@
 import pytest
 
-from agentmesh import detect, state
+from interlock import detect, state
 
 
 def _row(**kw):

@@ -1,6 +1,6 @@
 import json
 
-from agentmesh import install
+from interlock import install
 
 
 def test_hook_config_registers_exactly_four_events():
@@ -51,7 +51,7 @@ def test_install_preserves_unrelated_hooks(repo):
     cmds = [h["command"] for e in data["hooks"]["PreToolUse"]
             for h in e["hooks"]]
     assert "my-own-linter" in cmds
-    assert any("agentmesh" in c for c in cmds)
+    assert any("interlock" in c for c in cmds)
     assert data["permissions"]["allow"] == ["Bash(ls:*)"]
 
 

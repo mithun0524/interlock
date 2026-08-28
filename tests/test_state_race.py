@@ -2,11 +2,11 @@ import json
 import subprocess
 import sys
 
-from agentmesh import state
+from interlock import state
 
 WRITER = """
 import sys
-from agentmesh import state
+from interlock import state
 state.upsert(sys.argv[1], goal="agent " + sys.argv[1])
 """
 
