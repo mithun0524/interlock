@@ -30,13 +30,12 @@ Existing mitigations are insufficient:
 3. A dependent agent can object ("I depend on what you are removing") and the
    two negotiate without a human.
 4. A human decides only on deadlock or repo-wide architectural change.
-5. Zero infrastructure: no daemon, no service, no external binaries.
+5. Zero infrastructure: no daemon, no service, no dependency beyond `git`
+   itself (already present in any repo this runs on).
 
 ## Non-goals (v1)
 
 - Symbol-level co-editing of a single file. Claims stay file-granular.
-- Worktree/isolated mode. That is `git worktree` plus a documentation page,
-  not code.
 - Semantic duplicate-work detection. Comparing two goals for overlap needs an
   LLM call; `GOAL_OVERLAP` stays a heuristic warning.
 - Multi-machine or multi-human coordination.
@@ -54,15 +53,50 @@ adapter; MCP and git adapters follow without a rewrite.
 
 ## Data Model
 
-Repo root, gitignored:
+### Where state lives
+
+State lives at `$(git rev-parse --git-common-dir)/agentmesh/` — inside `.git`,
+not at the working-tree root:
 
 ```
-.agentmesh/
+<git-common-dir>/agentmesh/
   declarations.json     # every live agent, upserted by id
   inbox/<id>.jsonl      # pending messages, drained on read
   refcache.json         # symbol -> reference paths, keyed by HEAD sha
   lock                  # flock target
 ```
+
+This one choice covers both setups with no mode flag, because git already
+guarantees the property needed: **every worktree of a repo shares one
+`--git-common-dir`, while each has its own `--show-toplevel`.** Verified:
+
+```
+$ cd /repo            && git rev-parse --git-common-dir   # /repo/.git
+$ cd /elsewhere/wt-a  && git rev-parse --git-common-dir   # /repo/.git
+$ cd /elsewhere/wt-a  && git rev-parse --show-toplevel    # /elsewhere/wt-a
+```
+
+So agents sharing one checkout and agents in separate worktrees read and write
+the same coordination state, automatically. Consequences:
+
+- No `mode: shared | isolated` config, and no two code paths to test.
+- No `.gitignore` entry to patch — `.git/` is never tracked.
+- State survives `git clean -xfd`, which an agent may well run.
+
+Because a worktree gives real file isolation, declarations record the
+`worktree` (the agent's `--show-toplevel`) and the conflict rules split on it:
+
+| Class | Same worktree | Different worktrees |
+|---|---|---|
+| `FILE_OVERLAP` | conflict | **not** a conflict — the files are genuinely separate |
+| `ADD_COLLISION` (same new file) | conflict | not a conflict |
+| `INTERFACE_BREAK` | conflict | **still a conflict** — it surfaces at merge, which is too late |
+| `ADD_COLLISION` (same symbol) | conflict | conflict |
+| `GOD_SYMBOL` | escalate | escalate |
+
+That is the correct semantics for both of your setups: collaborative agents in
+one tree are kept off each other's files, while agents in separate worktrees are
+left alone on files and still warned about architectural collisions.
 
 One declaration per agent:
 
@@ -78,6 +112,8 @@ One declaration per agent:
   ],
   "deps": ["createSession", "AuthContext"],
   "touched": ["src/auth/jwt.ts"],
+  "progress": "session lookup replaced by verifyJwt(token); call sites now pass a raw token, not a req",
+  "worktree": "/Users/me/repo",
   "conflicts": [],
   "resolved": [],
   "state": "active",
@@ -96,6 +132,8 @@ Every field has a named reader:
 | `deltas` | interface-conflict detection — the reason this is not a lock table |
 | `deps` | forward-looking dependencies grep cannot see (code not yet written) |
 | `touched` | overlap detection; not derivable, since a shared tree's `git diff` cannot be attributed per agent |
+| `progress` | what the agent has actually produced so far — read by any agent that must adapt to it |
+| `worktree` | splits file-level conflicts from interface-level ones (see above) |
 | `conflicts` | computed at declare, consumed by the gate |
 | `resolved` | agreements that open the gate |
 | `state` | prune, and roster display |
@@ -109,6 +147,13 @@ The two timers serve different purposes and deliberately differ: 5 minutes
 marks an agent **absent** for negotiation, 30 minutes prunes its row. A row
 therefore outlives its absence, which is what lets a returning agent still find
 the note left in its inbox.
+
+`progress` is the output half of "what is the other agent doing". `goal` and
+`touched` together say *intent* and *where*; neither says what came out. An
+agent told "A is migrating auth, touched jwt.ts" cannot adapt. One told "call
+sites now pass a raw token, not a req" can. It is a single string, overwritten
+on every `declare` — current state only, no history, consistent with the rest of
+the model.
 
 ### Storage discipline
 
@@ -136,7 +181,13 @@ and the human/agent-facing subcommands.
 | `SessionStart` | — | prune stale rows, inject roster + "declare before editing" | no |
 | `PreToolUse` | `Edit\|Write\|NotebookEdit\|Bash` | the gate | yes |
 | `PostToolUse` | same | append to `touched` | no |
-| `SessionEnd` / `Stop` | — | `state: done`, release claims | no |
+| `SessionEnd` | — | `state: done`, release claims | no |
+
+`Stop` is deliberately **not** registered. It fires each time the agent finishes
+a response, not when the session ends, so releasing claims there would drop
+every agent's claims several times an hour and silently dissolve the
+coordination mid-work. `SessionEnd` alone releases; liveness in between comes
+from the heartbeat.
 
 ### The Bash hole
 
@@ -208,11 +259,12 @@ Remaining noise controls, cheapest first:
 
 - Word-boundary matching, source extensions only, `.gitignore` respected.
 - An agent's own globs excluded from its own hits.
-- **Generic-symbol guard:** a symbol shorter than 4 characters, or one whose hit
-  count exceeds the cap, is rejected at declare with a demand to qualify it as
-  `path/file.ts:symbol`. Stops `run`, `get`, `data` from matching the world.
-- **`GOD_SYMBOL` short-circuit:** past ~200 references, negotiating with six
-  agents is worse than one human decision.
+- **Short-symbol guard:** a symbol shorter than 4 characters is rejected at
+  declare with a demand to qualify it as `path/file.ts:symbol`, which restricts
+  the grep to that file. Stops `run`, `get`, `data` from matching the world.
+  This guard is about *ambiguity only* and never looks at hit counts — hit
+  counts belong to `GOD_SYMBOL`, and having both rules read the same number
+  would make one symbol both "rejected" and "escalated".
 
 Known ceiling: `git grep` with word boundaries, no AST. Upgrade path is a
 tree-sitter resolver per language, and only if intersect-filtered noise proves
@@ -232,8 +284,18 @@ One JSON line per inbox append:
  "round":1,"ts":1756400000}
 ```
 
-`kind` is one of `objection`, `offer`, `accept`, `refuse`. Four verbs cover
-every exchange the design requires.
+Four verbs, each with one sender and one meaning:
+
+| `kind` | Sent by | Meaning |
+|---|---|---|
+| `objection` | the **dependent** agent (B) | "I rely on `ref`; do not remove it as-is" |
+| `offer` | the **blocked** agent (A) | a concrete way forward — a shim, a migration, a different approach |
+| `accept` | either, in reply to an `offer` | agreed; the offer's terms are recorded in `resolved` |
+| `refuse` | either, in reply to an `offer` | rejected, with a counter-offer in `msg` |
+
+The asymmetry matters: A is the one blocked, so A always carries the burden of
+proposing. B can only object or answer. Without this, both sides wait for the
+other to move.
 
 ### Which conflicts negotiate
 
@@ -244,8 +306,9 @@ below, differing only in `ref`: a symbol for the first and third, a path for
 
 ### Flow (`INTERFACE_BREAK`)
 
-1. A declares `remove:getUserFromSession`. Detection finds B depends on it. A is
-   blocked.
+1. A declares `remove:getUserFromSession`. `declare` succeeds — it never fails
+   on conflict — and records the conflict in A's `conflicts`. A is blocked at
+   its next write, when the gate reads that entry.
 2. A's stderr names B's `id`, B's `goal`, and the available moves: propose a
    shim, ask B to migrate, or change approach. A sends an `offer`.
 3. The message lands in B's inbox and reaches B as `additionalContext` on B's
@@ -289,6 +352,10 @@ agentmesh resolve --ref getUserFromSession \
 
 Written once, unblocking both sides.
 
+`--ref` is matched globally, so a verdict on a symbol applies to every pair
+contending on it. Intended: an architectural decision about `getUserFromSession`
+should not need restating per agent pair.
+
 ### Deterministic fallback
 
 If rounds are exhausted and no human answers, **the later declarer yields** —
@@ -297,7 +364,8 @@ is the one rule an agent can reason about in advance.
 
 ## Trust Model
 
-Every agent runs as the same OS user with write access to `.agentmesh/`. Any
+Every agent runs as the same OS user with write access to the state directory.
+Any
 agent could forge an `accept` from another id. There is no security boundary
 here and the design does not pretend to one: `flock` protects against
 concurrent corruption, not against a misbehaving agent.
@@ -313,15 +381,16 @@ next to an LLM turn, and hackability matters more than milliseconds for a
 project that depends on contributions. Go saves roughly 35ms and costs every
 contributor a toolchain — reconsider only if profiling demands it.
 
-**No external binaries.** `git grep` is always present in a git repo, respects
+**No dependency beyond `git`.** `git grep` is always present in a git repo, respects
 tracked files, and is fast enough. `rg` is used opportunistically when found on
 `PATH`.
 
 ### CLI
 
 ```
-agentmesh init                 # write hook config + .gitignore entry
+agentmesh init                 # write hook config into .claude/settings*.json
 agentmesh declare --goal ... --globs ... [--removes S] [--sig S] [--deps S]
+                  [--progress "what I have produced so far"]
 agentmesh status               # roster, conflicts, pending decisions
 agentmesh reply --to ID --kind offer|accept|refuse --ref S --msg ...
 agentmesh resolve --ref S --decision ...
@@ -330,10 +399,11 @@ agentmesh hook                 # internal; reads hook JSON on stdin
 ```
 
 `init` is the entire onboarding: it patches the project's
-`.claude/settings.json` with the four hook entries and appends `.agentmesh/` to
-`.gitignore`. Because those settings live in the repo, every agent any
-teammate points at that repo is coordinated automatically. That property is the
-adoption story — nobody configures seven sessions by hand.
+`.claude/settings.json` with the three hook entries. No `.gitignore` edit is
+needed, since state lives inside `.git/`. Because those settings live in the
+repo, every agent any teammate points at that repo is coordinated
+automatically. That property is the adoption story — nobody configures seven
+sessions by hand.
 
 ### Layout
 
@@ -373,6 +443,13 @@ concurrency is genuinely hard.
 - **Bash write shapes:** table-driven over `sed -i`, `cat >`, `tee`, `mv`, and
   heredocs, plus negatives (`grep`, `cat` with no redirect) so the gate never
   blocks a read.
+- **`Stop` does not release:** a simulated end-of-turn leaves claims intact.
+  Guards the regression this spec's first draft contained.
+- **Worktree split:** two agents in different worktrees editing the same path
+  produce no `FILE_OVERLAP`, while a `remove` in one still raises
+  `INTERFACE_BREAK` against the other.
+- **Common-dir resolution:** state path resolves identically from the main
+  checkout and from a linked worktree.
 - **Three-agent integration:** subprocesses driven by real hook payloads
   through a full remove → objection → accept cycle. The only test that proves
   the product works.
