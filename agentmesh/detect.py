@@ -1,6 +1,9 @@
 """Conflict detection. Pure functions over plain dicts — no disk access."""
 
+import json
+import os
 import re
+import shutil
 import subprocess
 
 from . import state
@@ -92,4 +95,83 @@ def file_conflicts(me, others, root, my_id=None):
                 FILE_OVERLAP, path, aid,
                 f"{path} also claimed by {aid} ({row.get('goal', '')!r})",
             ))
+    return found
+
+BREAKING_KINDS = ("remove", "sig")
+
+
+def load_refcache():
+    p = state.state_dir() / "refcache.json"
+    if not p.exists():
+        return {}
+    try:
+        cache = json.loads(p.read_text())
+    except json.JSONDecodeError:
+        return {}
+    if cache.get("head") != state.head_sha():
+        return {}                      # dropped wholesale when HEAD moves
+    return cache.get("refs", {})
+
+
+def save_refcache(cache):
+    p = state.state_dir() / "refcache.json"
+    tmp = p.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps({"head": state.head_sha(), "refs": cache}))
+    os.replace(tmp, p)
+
+
+def _grep(symbol, root, path=None):
+    """git grep is always present in a git repo. rg is used only if found."""
+    if shutil.which("rg"):
+        cmd = ["rg", "-l", "-w", "--", symbol]
+        if path:
+            cmd.append(path)
+    else:
+        cmd = ["git", "grep", "-l", "-w", "-e", symbol]
+        if path:
+            cmd += ["--", path]
+    out = subprocess.run(cmd, cwd=root, capture_output=True, text=True,
+                         check=False)
+    return sorted(l for l in out.stdout.splitlines() if l)
+
+
+def refs_for_symbol(symbol, root, cache):
+    path = None
+    if ":" in symbol:
+        path, symbol = symbol.rsplit(":", 1)
+    key = f"{path + ':' if path else ''}{symbol}@{state.head_sha()}"
+    if key not in cache:
+        cache[key] = _grep(symbol, root, path)
+    return cache[key]
+
+
+def _bare(symbol):
+    return symbol.rsplit(":", 1)[-1]
+
+
+def interface_conflicts(me, others, root, my_id=None, cache=None):
+    if cache is None:
+        cache = load_refcache()
+    mine = claimed_paths(me, root)
+    live = _live(others, my_id)
+    found = []
+    for delta in me.get("deltas", []):
+        if delta.get("kind") not in BREAKING_KINDS:
+            continue
+        symbol = delta["symbol"]
+        hits = set(refs_for_symbol(symbol, root, cache)) - mine
+        for aid, row in sorted(live.items()):
+            theirs = claimed_paths(row, root)
+            shared = sorted(hits & theirs)
+            if shared:
+                found.append(conflict(
+                    INTERFACE_BREAK, symbol, aid,
+                    f"referenced in {', '.join(shared)}, claimed by {aid}",
+                ))
+            elif _bare(symbol) in row.get("deps", []):
+                found.append(conflict(
+                    INTERFACE_BREAK, symbol, aid,
+                    f"declared dependency of {aid} ({row.get('goal', '')!r})",
+                ))
+    save_refcache(cache)
     return found
