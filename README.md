@@ -88,6 +88,24 @@ Read these before trusting agentmesh with anything that matters.
   access to the state directory, and could forge an `accept` from another id.
   `flock` protects against concurrent corruption, not against a misbehaving
   agent. Do not deploy agentmesh as a multi-tenant safety mechanism.
+- **Protection covers concurrently-live agents only.** `SessionEnd` releases an
+  agent's claims, but the files it wrote stay behind. Observed twice in live
+  runs: an agent finished writing docs, exited, and a later agent deleted the
+  function those docs described with no conflict raised — correctly, since
+  nobody was left to object. Outliving the session would mean keeping a
+  dependency record after exit, which cuts against the storage discipline the
+  rest of the design rests on. Not planned; know that it is the shape of the
+  gap.
+- **Temporal overlap matters as much as file overlap, and is not modelled.**
+  Two agents conflict only if they are live at the same time. Short tasks
+  finish before long ones reach them, so agentmesh does nothing — which looks
+  like success and is not. If you are evaluating it, make sure your agents
+  actually overlap before concluding anything.
+- **Coordination costs turns.** Each negotiation round is tool calls an agent
+  spends not writing code. In one live run a 20-turn agent negotiated
+  correctly, then hit its cap mid-refactor and left a call site pointing at a
+  deleted function — the exact breakage the tool exists to prevent. Give agents
+  headroom, or the coordination overhead becomes the failure.
 - **Symbol-level co-editing of one file is out of scope.** Claims are
   file-granular.
 - **Duplicate-work detection is a heuristic warning, never a block.** Two agents
