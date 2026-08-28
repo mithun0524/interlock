@@ -244,7 +244,14 @@ def build_parser():
 
     r = sub.add_parser("reply", help="send a negotiation message")
     r.add_argument("--to", required=True)
-    r.add_argument("--kind", required=True, choices=negotiate.KINDS)
+    r.add_argument(
+        "--kind", required=True, choices=negotiate.KINDS,
+        help="objection: you depend on this. offer: a way forward (send this "
+             "when you are the blocked party). accept: unconditional "
+             "agreement, right now, with no preconditions — if you have a "
+             "precondition use refuse and state it. refuse: rejected, with a "
+             "counter-offer in --msg.",
+    )
     r.add_argument("--ref", required=True)
     r.add_argument("--msg", required=True)
     r.set_defaults(func=cmd_reply)

@@ -166,3 +166,37 @@ def test_the_gate_never_suggests_resolve_for_a_negotiable_conflict(repo):
                                             "referenced in src/api.py")])
     _, msg = hooks.gate(_payload())
     assert "interlock resolve" not in msg
+
+
+def test_the_offer_prompt_defines_accept_as_unconditional(repo):
+    """Found live: an agent accepted with 'go ahead once I confirm tests pass
+    -- will ping shortly'. accept is binary in the model, so that was recorded
+    as unconditional, the gate opened, and the ping never came.
+
+    accept stays binary. The prompt now says so, and routes a precondition to
+    refuse -- where it keeps the gate shut, which is the safe direction."""
+    msgs = [{"from": "b7d2e0", "to": "a3f9c1", "kind": "offer",
+             "ref": "getUserFromSession", "msg": "I will leave a shim"}]
+    text = negotiate.format_for_agent(msgs)
+    assert "no preconditions" in text
+    assert "--kind refuse" in text
+
+
+def test_the_objection_prompt_is_unchanged_by_that(repo):
+    msgs = [{"from": "b7d2e0", "to": "a3f9c1", "kind": "objection",
+             "ref": "getUserFromSession", "msg": "I rely on this"}]
+    text = negotiate.format_for_agent(msgs)
+    assert "--kind offer" in text
+    assert "no preconditions" not in text
+
+
+def test_reply_help_states_what_accept_means():
+    import io, contextlib
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        try:
+            cli.build_parser().parse_args(["reply", "--help"])
+        except SystemExit:
+            pass
+    help_text = buf.getvalue()
+    assert "unconditional" in help_text.lower()

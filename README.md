@@ -176,11 +176,13 @@ from running real concurrent agent sessions, not from speculation.
   agents conflict only while both are live. Short tasks finish before long ones
   reach them, so `interlock` does nothing — which looks like success and isn't.
   If you're evaluating it, make sure your agents actually overlap.
-- **`accept` is binary; agents answer in conditions.** A live run produced
+- **`accept` is binary, and stays binary.** A live run produced
   *"go ahead once I confirm tests pass — will ping shortly."* `interlock`
-  recorded it as unconditional, opened the gate, and no ping came. Read a
-  recorded agreement as "the other agent did not object", not "the precondition
-  it named was met".
+  recorded it as unconditional, opened the gate, and no ping came. The prompt
+  now states that `accept` means agreement *now* with no preconditions, and
+  routes a precondition to `refuse` — where it keeps the change blocked. That
+  is wording, not enforcement: an agent that accepts while privately hedging
+  still opens the gate.
 - **Coordination costs turns.** Each negotiation round is tool calls an agent
   spends not writing code. One 20-turn agent negotiated correctly, then hit its
   cap mid-refactor and left a call site pointing at a deleted function — the
@@ -196,8 +198,8 @@ from running real concurrent agent sessions, not from speculation.
 
 ## Roadmap
 
-- [ ] Conditional `accept` — a state that keeps blocking until the named
-      precondition is confirmed
+- [ ] A real `conditional` accept state, if the wording fix proves insufficient
+      — status that keeps blocking until the named precondition is confirmed
 - [ ] MCP adapter, so Cursor, Codex and other MCP agents work too (the core is
       tool-agnostic and takes plain dicts; this is an adapter, not a rewrite)
 - [ ] Tree-sitter reference resolution, if grep noise proves real in practice

@@ -85,9 +85,20 @@ def format_for_agent(msgs):
                 f"--msg \"<shim / migration / other approach>\""
             )
         if m["kind"] == "offer":
+            # accept is binary and always will be. Observed live: an agent
+            # accepted with "go ahead once I confirm tests pass -- will ping
+            # shortly", which was recorded as unconditional, opened the gate,
+            # and the ping never came. Saying so here routes a precondition to
+            # refuse, where it keeps the gate shut -- the safe direction.
             lines.append(
                 f"      answer it: interlock reply --to {m['from']} "
-                f"--kind accept|refuse --ref {m['ref']} --msg \"<why>\""
+                f"--kind accept --ref {m['ref']} --msg \"<why>\""
+            )
+            lines.append(
+                "      --kind accept means you agree NOW, with no "
+                "preconditions. If you have one — tests to confirm, work to "
+                "finish first — use --kind refuse and state it, so the change "
+                "stays blocked until you are ready."
             )
     return "\n".join(lines)
 
