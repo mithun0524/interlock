@@ -59,28 +59,37 @@ def cmd_declare(args):
         print(f"agentmesh: {e}", file=sys.stderr)
         return 1
 
+    root = state.worktree_root()
     fields = {
         "goal": args.goal, "globs": args.globs, "deltas": deltas,
-        "deps": args.deps, "worktree": state.worktree_root(),
+        "deps": args.deps, "worktree": root,
     }
     if args.progress is not None:
         fields["progress"] = args.progress
-    state.upsert(agent_id, **fields)
 
+    # Detect against the PROSPECTIVE row, then write fields and conflicts in
+    # one upsert. Writing fields first and conflicts second leaves a window
+    # where the declaration is live and advertises no conflicts, and another
+    # agent's gate reading in that window sails straight through it.
     agents = state.get_all()
-    me = agents[agent_id]
-    conflicts = detect.detect_all(me, agents, state.worktree_root(),
-                                  my_id=agent_id)
+    prior_row = agents.get(agent_id, {})
+    me = dict(prior_row)
+    me.update(fields)
+    agents = dict(agents)
+    agents[agent_id] = me
+
+    conflicts = detect.detect_all(me, agents, root, my_id=agent_id)
     # preserve status/round on conflicts already under negotiation
     prior = {(c["kind"], c["ref"], c.get("with")): c
-             for c in me.get("conflicts", [])}
+             for c in prior_row.get("conflicts", [])}
     for c in conflicts:
-        old = prior.get((c["kind"], c["ref"], c.get("with")))
-        if old:
-            c.update({k: old[k] for k in
+        was = prior.get((c["kind"], c["ref"], c.get("with")))
+        if was:
+            c.update({k: was[k] for k in
                       ("status", "round", "waiting_since_inv", "nudged")
-                      if k in old})
-    state.upsert(agent_id, conflicts=conflicts)
+                      if k in was})
+
+    state.upsert(agent_id, conflicts=conflicts, **fields)
     _print_conflicts(conflicts)
     return 0
 

@@ -166,3 +166,33 @@ def test_resolve_agent_id_reads_the_env_var_claude_code_actually_exports(
     monkeypatch.delenv("CLAUDE_SESSION_ID", raising=False)
     monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "a3f9c1de-dead-beef")
     assert cli.resolve_agent_id() == "a3f9c1"
+
+
+def test_declare_writes_state_exactly_once(repo, monkeypatch):
+    """Regression: found by a live 3-agent run.
+
+    declare used to upsert fields, then upsert conflicts. Between those two
+    writes the declaration was live advertising no conflicts, so another
+    agent's gate could read it and sail through.
+    """
+    monkeypatch.setenv("AGENTMESH_ID", "a3f9c1")
+    state.upsert("b7d2e0", goal="pagination", globs=["src/api.py"],
+                 worktree=state.worktree_root())
+
+    real_upsert = state.upsert
+    calls = []
+
+    def counting_upsert(agent_id, **fields):
+        if agent_id == "a3f9c1":
+            calls.append(fields)
+        return real_upsert(agent_id, **fields)
+
+    monkeypatch.setattr(state, "upsert", counting_upsert)
+    monkeypatch.setattr(cli.state, "upsert", counting_upsert)
+    cli.main(["declare", "--goal", "g", "--globs", "src/auth.py",
+              "--removes", "getUserFromSession"])
+
+    assert len(calls) == 1, f"declare wrote {len(calls)} times"
+    assert "conflicts" in calls[0] and "globs" in calls[0]
+    # and the single write carries the detected conflict
+    assert calls[0]["conflicts"][0]["kind"] == "INTERFACE_BREAK"
