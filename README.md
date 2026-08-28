@@ -18,10 +18,13 @@ conflict before either agent commits, and lets the two settle it without you.
 ## Install
 
 ```bash
-pip install interlock
+pip install git+https://github.com/mithun0524/interlock
 cd your-repo
 interlock init          # --local to install for yourself, not everyone who clones
 ```
+
+Not on PyPI yet. Python 3.9+, no runtime dependencies, `git` is the only
+external binary.
 
 That is the whole setup. `init` writes four hook entries into
 `.claude/settings.json`, so every agent pointed at this repo is coordinated
