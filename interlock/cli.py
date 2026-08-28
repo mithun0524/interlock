@@ -127,6 +127,16 @@ def cmd_status(args):
         for c in row.get("conflicts", []):
             print(f"    [{c['status']}] {c['kind']} {c['ref']} "
                   f"with {c.get('with') or '(repo-wide)'}")
+    stranded = [(aid, row) for aid, row in sorted(agents.items())
+                if row.get("incomplete")]
+    if stranded:
+        print("\nINCOMPLETE — an agent exited with declared work undone")
+        for aid, row in stranded:
+            print(f"  {aid} ({row.get('goal', '')}):")
+            for item in row["incomplete"]:
+                print(f"    {item['kind']} {item['symbol']} still referenced "
+                      f"in {', '.join(item['still_referenced_in'])}")
+
     esc = negotiate.escalations()
     if esc:
         print("\nDECISION NEEDED")

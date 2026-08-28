@@ -210,8 +210,11 @@ def gate(payload):
                     f"Next step: interlock reply --to {aid} "
                     f"--kind objection --ref {rel} "
                     f"--msg \"<why you need this file>\"\n"
-                    f"Or work on a different file. Either way the move is "
-                    f"yours — do not stop here for a human."
+                    f"This block will not clear for you later — your session "
+                    f"ends before {aid} releases the file, so do not wait for "
+                    f"it. Negotiate now, or finish what you can and say "
+                    f"plainly in your final message which edits you did NOT "
+                    f"make, so they are not silently lost."
                 )
         if rel not in mine and not detect.matches_globs(
                 rel, me.get("globs", [])):
@@ -252,8 +255,51 @@ def run(event, payload):
         return ALLOW, "", ""
 
     if event == "SessionEnd":
-        if me_id in state.get_all():
-            state.upsert(me_id, state="done")
+        agents = state.get_all()
+        if me_id in agents:
+            leftover = unfinished(agents[me_id], state.worktree_root())
+            state.upsert(me_id, state="done", incomplete=leftover)
+            if leftover:
+                return ALLOW, "", _incomplete_message(me_id, leftover)
         return ALLOW, "", ""
 
     return ALLOW, "", ""       # Stop and anything else: no-op by design
+
+
+def unfinished(row, root):
+    """Declared removals whose call sites the agent never got to.
+
+    A live run ended with every agent exiting 0 and the repo broken: one agent
+    removed a symbol, was blocked from the call sites by another agent's claim,
+    said it would "resume automatically in ~2 min", and exited. Nothing noticed.
+    """
+    leftover = []
+    cache = detect.load_refcache()
+    mine = detect.claimed_paths(row, root)
+    for delta in row.get("deltas", []):
+        if delta.get("kind") not in detect.BREAKING_KINDS:
+            continue
+        symbol = delta["symbol"]
+        stragglers = sorted(set(detect.refs_for_symbol(symbol, root, cache))
+                            - mine)
+        if stragglers:
+            leftover.append({"symbol": symbol, "kind": delta["kind"],
+                             "still_referenced_in": stragglers})
+    return leftover
+
+
+def _incomplete_message(me_id, leftover):
+    lines = [
+        f"interlock: {me_id} is exiting with declared work incomplete.",
+    ]
+    for item in leftover:
+        lines.append(
+            f"  {item['kind']} {item['symbol']} — still referenced in "
+            f"{', '.join(item['still_referenced_in'])}"
+        )
+    lines.append(
+        "Those references were not updated, so the repo may not build. Say so "
+        "explicitly in your final message rather than leaving it silent. "
+        "`interlock status` will show this until it goes stale."
+    )
+    return "\n".join(lines)

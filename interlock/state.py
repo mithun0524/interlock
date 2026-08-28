@@ -95,7 +95,10 @@ def save(data):
 def prune(data, now):
     keep = {}
     for aid, row in data.get("agents", {}).items():
-        if row.get("state") == "done":
+        # A finished agent that left declared work undone survives until it
+        # goes stale, so `status` can show a human what was abandoned. It holds
+        # no claims -- everything that reads claims skips state == "done".
+        if row.get("state") == "done" and not row.get("incomplete"):
             continue
         if now - row.get("hb", 0) > TTL_PRUNE:
             continue

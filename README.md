@@ -183,6 +183,19 @@ from running real concurrent agent sessions, not from speculation.
   routes a precondition to `refuse` — where it keeps the change blocked. That
   is wording, not enforcement: an agent that accepts while privately hedging
   still opens the gate.
+- **A block is not a queue, and an agent that waits loses its work.** The most
+  serious failure observed. An agent removed a symbol, was blocked from the call
+  sites by another agent's claim, reported *"waiting on bbbbbb to release
+  src/api.py … will resume automatically in ~2 min"*, and exited — headless
+  sessions are single-shot, so there was no resuming. The other agent released
+  the file afterwards. Both exited 0 and the repo did not build. Without
+  interlock the first agent would simply have edited the file and left it
+  consistent, so **the block caused the breakage the tool exists to prevent.**
+  Mitigated, not solved: the claim message now says the block will not clear
+  and not to wait, and `SessionEnd` flags declared removals whose call sites
+  still reference them (`interlock status` shows them until they go stale).
+  Nothing yet makes the other agent's release reach an agent that has already
+  exited.
 - **Coordination costs turns.** Each negotiation round is tool calls an agent
   spends not writing code. One 20-turn agent negotiated correctly, then hit its
   cap mid-refactor and left a call site pointing at a deleted function — the
@@ -198,6 +211,10 @@ from running real concurrent agent sessions, not from speculation.
 
 ## Roadmap
 
+- [ ] Obligations that outlive a session — a release should reach whoever was
+      blocked on it, and a resolution that implies work (update these call
+      sites) should be tracked until done. This is the real fix for the
+      block-is-not-a-queue failure above
 - [ ] A real `conditional` accept state, if the wording fix proves insufficient
       — status that keeps blocking until the named precondition is confirmed
 - [ ] MCP adapter, so Cursor, Codex and other MCP agents work too (the core is
