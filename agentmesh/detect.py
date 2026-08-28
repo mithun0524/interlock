@@ -175,3 +175,104 @@ def interface_conflicts(me, others, root, my_id=None, cache=None):
                 ))
     save_refcache(cache)
     return found
+
+
+class SymbolTooVague(Exception):
+    """A bare symbol too short to grep for without matching the world."""
+
+    def __init__(self, symbol):
+        self.symbol = symbol
+        super().__init__(
+            f"symbol {symbol!r} is too short to search for unambiguously. "
+            f"Qualify it as path/to/file.py:{symbol} to restrict the search."
+        )
+
+
+def validate_symbols(deltas, deps):
+    """Ambiguity guard only — deliberately blind to hit counts, which are
+    GOD_SYMBOL's business."""
+    names = [d["symbol"] for d in deltas] + list(deps)
+    for name in names:
+        if ":" in name:
+            continue
+        if len(name) < state.MIN_SYMBOL_LEN:
+            raise SymbolTooVague(name)
+
+
+def _added(row):
+    return {_bare(d["symbol"]) for d in row.get("deltas", [])
+            if d.get("kind") == "add"}
+
+
+def add_collisions(me, others, root, my_id=None):
+    mine = _added(me)
+    tracked = set(tracked_files(root))          # hoisted: one call, not N
+    new_mine = set(me.get("globs", [])) - tracked
+    found = []
+    for aid, row in sorted(_live(others, my_id).items()):
+        for symbol in sorted(mine & _added(row)):
+            found.append(conflict(
+                ADD_COLLISION, symbol, aid,
+                f"{aid} is also adding {symbol}",
+            ))
+        if row.get("worktree") == me.get("worktree"):
+            new_theirs = set(row.get("globs", [])) - tracked
+            for path in sorted(new_mine & new_theirs):
+                found.append(conflict(
+                    ADD_COLLISION, path, aid,
+                    f"{aid} is also creating {path}",
+                ))
+    return found
+
+
+def god_symbols(me, root, cache=None):
+    if cache is None:
+        cache = load_refcache()
+    found = []
+    for delta in me.get("deltas", []):
+        if delta.get("kind") not in BREAKING_KINDS:
+            continue
+        symbol = delta["symbol"]
+        n = len(refs_for_symbol(symbol, root, cache))
+        if n > state.GOD_SYMBOL_REFS:
+            c = conflict(
+                GOD_SYMBOL, symbol, "",
+                f"{n} references exceed the cap of {state.GOD_SYMBOL_REFS}; "
+                f"a repo-wide architectural decision, not a negotiation",
+            )
+            c["status"] = "escalated"
+            found.append(c)
+    save_refcache(cache)
+    return found
+
+
+def goal_overlaps(me, others, root, my_id=None):
+    """Advisory. Two agents reading the same area is normal; blocking it
+    would make the tool unusable."""
+    if me.get("deltas"):
+        return []
+    mine = claimed_paths(me, root)
+    found = []
+    for aid, row in sorted(_live(others, my_id).items()):
+        if row.get("deltas"):
+            continue
+        if mine & claimed_paths(row, root):
+            c = conflict(
+                GOAL_OVERLAP, "", aid,
+                f"{aid} is working the same files with goal "
+                f"{row.get('goal', '')!r} — possible duplicate work",
+            )
+            c["status"] = "resolved"          # recorded, never blocks
+            found.append(c)
+    return found
+
+
+def detect_all(me, others, root, my_id=None):
+    cache = load_refcache()
+    found = []
+    found += file_conflicts(me, others, root, my_id)
+    found += interface_conflicts(me, others, root, my_id, cache)
+    found += add_collisions(me, others, root, my_id)
+    found += god_symbols(me, root, cache)
+    found += goal_overlaps(me, others, root, my_id)
+    return found
