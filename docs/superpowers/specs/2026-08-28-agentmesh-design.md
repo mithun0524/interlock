@@ -117,7 +117,8 @@ One declaration per agent:
   "conflicts": [],
   "resolved": [],
   "state": "active",
-  "hb": 1756400000
+  "hb": 1756400000,
+  "inv": 47
 }
 ```
 
@@ -138,6 +139,7 @@ Every field has a named reader:
 | `resolved` | agreements that open the gate |
 | `state` | prune, and roster display |
 | `hb` | absent-agent detection |
+| `inv` | gate invocations by this agent; silence detection counts against it |
 
 `hb` is refreshed on every `PreToolUse` and `PostToolUse` invocation. An agent
 that is thinking, or waiting on a long build, still heartbeats as long as it
@@ -154,6 +156,22 @@ agent told "A is migrating auth, touched jwt.ts" cannot adapt. One told "call
 sites now pass a raw token, not a req" can. It is a single string, overwritten
 on every `declare` — current state only, no history, consistent with the rest of
 the model.
+
+A `conflicts` entry:
+
+```json
+{
+  "kind": "INTERFACE_BREAK",
+  "ref": "getUserFromSession",
+  "with": "b7d2e0",
+  "status": "open",
+  "round": 0,
+  "detail": "referenced in src/api/me.ts, claimed by b7d2e0"
+}
+```
+
+`status` moves `open` → `negotiating` → `resolved` | `escalated`. The gate blocks
+on any entry that is not `resolved`. `round` counts exchanges against the cap.
 
 ### Storage discipline
 
