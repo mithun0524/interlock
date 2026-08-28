@@ -77,7 +77,13 @@ Read these before trusting agentmesh with anything that matters.
   which still beats no coordination.
 - **Reference detection is `git grep` with word boundaries, not an AST.** False
   positives are suppressed by requiring an intersection with another live
-  declaration — reduced, not eliminated.
+  declaration — reduced, not eliminated. Untracked-but-not-ignored files are
+  searched; ignored paths are not.
+- **Agents escalate rather than negotiate, by default.** In live runs a blocked
+  agent read the hint, understood that `agentmesh reply` existed, and still
+  stopped to ask its human instead. The negotiation machinery works, but do not
+  expect it to be used unprompted — tell your agents in `CLAUDE.md`/`AGENTS.md`
+  that replying is the expected move.
 - **No security boundary.** Every agent runs as the same OS user with write
   access to the state directory, and could forge an `accept` from another id.
   `flock` protects against concurrent corruption, not against a misbehaving

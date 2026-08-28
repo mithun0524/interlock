@@ -224,7 +224,10 @@ quo. This must be stated in the README.
 ### Path through the gate
 
 1. **No declaration** → exit 2. stderr instructs the agent to run
-   `agentmesh declare`. `SessionStart` already nudged, so this rarely fires.
+   `agentmesh declare --id <its own id>`. **The id must come from the payload**:
+   the CLI cannot discover the session id on its own, and an agent left to guess
+   invents a name the gate then never matches — blocking it forever while it
+   believes it has declared. Observed live before the fix.
 2. **Declared, file in own globs, unclaimed** → exit 0. Inbox drained into
    `additionalContext` — this is how another agent's objection arrives.
 3. **File claimed by another agent** → exit 2 naming that agent's `id`, `goal`,
@@ -237,7 +240,10 @@ quo. This must be stated in the README.
 `git grep` across a large repo on every write would make editing slow.
 `declare` does the expensive work once — resolve globs, grep each `remove`/`sig`
 symbol, cross-reference other declarations — and stores the result in
-`conflicts`. The gate is then one `flock`'d JSON read plus a glob match:
+`conflicts`. Detection runs against the **prospective** row and a single
+`upsert` writes fields and conflicts together: writing fields first and
+conflicts second leaves a window where the declaration is live advertising no
+conflicts, and another agent's gate reading in that window sails through. The gate is then one `flock`'d JSON read plus a glob match:
 sub-50ms, no subprocess.
 
 Consequence: an agent that declares early and drifts is caught only when it
@@ -275,7 +281,11 @@ another live declaration. That is rare enough to need no AST.
 
 Remaining noise controls, cheapest first:
 
-- Word-boundary matching, source extensions only, `.gitignore` respected.
+- Word-boundary matching, `.gitignore` respected. Untracked-but-not-ignored
+  files **are** searched (`git grep --untracked`): a brand-new file is exactly
+  the kind that references what another agent is removing. Verified live — an
+  agent documented a function another agent deleted in the same session, and
+  tracked-only detection missed it entirely.
 - An agent's own globs excluded from its own hits.
 - **Short-symbol guard:** a symbol shorter than 4 characters is rejected at
   declare with a demand to qualify it as `path/file.ts:symbol`, which restricts
