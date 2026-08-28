@@ -27,14 +27,30 @@ def test_qualified_symbol_restricts_the_search(repo):
     assert hits == ["src/auth.py"]
 
 
-def test_refcache_is_reused_within_one_head(repo):
+def test_a_passed_cache_memoises_within_one_call(repo):
+    """One detect_all pass should not grep the same symbol twice."""
     cache = {}
     detect.refs_for_symbol("getUserFromSession", str(repo), cache)
-    key = f"getUserFromSession@{state.head_sha()}"
-    cache[key] = ["sentinel.py"]
+    cache["getUserFromSession"] = ["sentinel.py"]
     assert detect.refs_for_symbol("getUserFromSession", str(repo), cache) == [
         "sentinel.py"
     ]
+
+
+def test_nothing_is_cached_across_calls(repo):
+    """Regression: the cache used to be persisted on disk keyed by HEAD. HEAD
+    does not move during a session while files change constantly, so it went
+    stale within seconds -- and a completion check missed a file created
+    mid-session that still referenced a deleted symbol."""
+    detect.refs_for_symbol("getUserFromSession", str(repo), None)
+    (repo / "late.py").write_text("getUserFromSession(req)\n")
+    hits = detect.refs_for_symbol("getUserFromSession", str(repo), None)
+    assert "late.py" in hits
+
+
+def test_no_cache_file_is_written(repo):
+    detect.refs_for_symbol("getUserFromSession", str(repo))
+    assert not (state.state_dir() / "refcache.json").exists()
 
 
 def test_unclaimed_call_site_is_not_a_conflict(repo):

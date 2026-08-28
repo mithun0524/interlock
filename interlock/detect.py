@@ -111,26 +111,6 @@ def file_conflicts(me, others, root, my_id=None):
 BREAKING_KINDS = ("remove", "sig")
 
 
-def load_refcache():
-    p = state.state_dir() / "refcache.json"
-    if not p.exists():
-        return {}
-    try:
-        cache = json.loads(p.read_text())
-    except json.JSONDecodeError:
-        return {}
-    if cache.get("head") != state.head_sha():
-        return {}                      # dropped wholesale when HEAD moves
-    return cache.get("refs", {})
-
-
-def save_refcache(cache):
-    p = state.state_dir() / "refcache.json"
-    tmp = p.with_suffix(".json.tmp")
-    tmp.write_text(json.dumps({"head": state.head_sha(), "refs": cache}))
-    os.replace(tmp, p)
-
-
 def _grep(symbol, root, path=None):
     """git grep is always present in a git repo. rg is used only if found."""
     if shutil.which("rg"):
@@ -148,11 +128,23 @@ def _grep(symbol, root, path=None):
     return sorted(l for l in out.stdout.splitlines() if l)
 
 
-def refs_for_symbol(symbol, root, cache):
+def refs_for_symbol(symbol, root, cache=None):
+    """Grep for a symbol's references.
+
+    `cache` is an optional per-call memo so one detect_all pass does not grep
+    the same symbol twice. It is deliberately NOT persisted: the previous
+    on-disk cache was keyed by HEAD, which does not move during a session
+    while the files change constantly, so it went stale within seconds and
+    caused false negatives — including a completion check that failed to
+    notice a file created mid-session still referencing a deleted symbol.
+    Detection only runs at declare time, so a fresh grep is cheap enough.
+    """
+    if cache is None:
+        cache = {}
     path = None
     if ":" in symbol:
         path, symbol = symbol.rsplit(":", 1)
-    key = f"{path + ':' if path else ''}{symbol}@{state.head_sha()}"
+    key = f"{path + ':' if path else ''}{symbol}"
     if key not in cache:
         cache[key] = _grep(symbol, root, path)
     return cache[key]
@@ -164,7 +156,7 @@ def _bare(symbol):
 
 def interface_conflicts(me, others, root, my_id=None, cache=None):
     if cache is None:
-        cache = load_refcache()
+        cache = {}
     mine = claimed_paths(me, root)
     live = _live(others, my_id)
     found = []
@@ -186,7 +178,6 @@ def interface_conflicts(me, others, root, my_id=None, cache=None):
                     INTERFACE_BREAK, symbol, aid,
                     f"declared dependency of {aid} ({row.get('goal', '')!r})",
                 ))
-    save_refcache(cache)
     return found
 
 
@@ -240,7 +231,7 @@ def add_collisions(me, others, root, my_id=None):
 
 def god_symbols(me, root, cache=None):
     if cache is None:
-        cache = load_refcache()
+        cache = {}
     found = []
     for delta in me.get("deltas", []):
         if delta.get("kind") not in BREAKING_KINDS:
@@ -255,7 +246,6 @@ def god_symbols(me, root, cache=None):
             )
             c["status"] = "escalated"
             found.append(c)
-    save_refcache(cache)
     return found
 
 
@@ -281,7 +271,7 @@ def goal_overlaps(me, others, root, my_id=None):
 
 
 def detect_all(me, others, root, my_id=None):
-    cache = load_refcache()
+    cache = {}          # per-call memo only; never persisted
     found = []
     found += file_conflicts(me, others, root, my_id)
     found += interface_conflicts(me, others, root, my_id, cache)

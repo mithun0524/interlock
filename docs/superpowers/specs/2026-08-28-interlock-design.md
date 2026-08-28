@@ -63,7 +63,6 @@ not at the working-tree root:
 <git-common-dir>/interlock/
   declarations.json     # every live agent, upserted by id
   inbox/<id>.jsonl      # pending messages, drained on read
-  refcache.json         # symbol -> reference paths, keyed by HEAD sha
   lock                  # flock target
 ```
 
@@ -182,8 +181,6 @@ on any entry that is not `resolved`. `round` counts exchanges against the cap.
   Pruning happens in the hook's own write path, not on a schedule.
 - `inbox/<id>.jsonl` is the only append-shaped store, and it is truncated the
   moment it is drained.
-- `refcache.json` is keyed `<symbol>@<HEAD sha>` and dropped wholesale when
-  `HEAD` moves. Bounded by construction; no prune job.
 - No history table. Nothing reads history — a resolved negotiation mutates the
   declarations, and those are the only state anyone consults.
 
@@ -299,9 +296,13 @@ Known ceiling: `git grep` with word boundaries, no AST. Upgrade path is a
 tree-sitter resolver per language, and only if intersect-filtered noise proves
 real in practice.
 
-`refcache.json` can go stale mid-session against uncommitted edits in a shared
-dirty tree. Accepted: a stale hit still has to intersect a live declaration to
-surface.
+**There is no reference cache.** An earlier version persisted grep results keyed
+by `HEAD`, on the reasoning that `HEAD` moving invalidates them. It does — but
+`HEAD` does not move during a session while the files change constantly, so the
+cache went stale within seconds and produced false negatives: a completion check
+failed to notice a file created mid-session that still referenced a deleted
+symbol. Detection only runs at declare time, so a fresh grep is cheap enough.
+A per-call memo remains, so one `detect_all` pass does not grep a symbol twice.
 
 ## Negotiation Protocol
 

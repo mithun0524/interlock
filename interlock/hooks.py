@@ -274,7 +274,8 @@ def unfinished(row, root):
     said it would "resume automatically in ~2 min", and exited. Nothing noticed.
     """
     leftover = []
-    cache = detect.load_refcache()
+    cache = {}          # fresh grep: a persisted cache missed files created
+                        # during the session, which is exactly this check's job
     mine = detect.claimed_paths(row, root)
     for delta in row.get("deltas", []):
         if delta.get("kind") not in detect.BREAKING_KINDS:
